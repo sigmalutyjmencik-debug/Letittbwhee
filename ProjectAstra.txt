@@ -7,6 +7,10 @@ local Workspace   = game:GetService("Workspace")
 local RunService  = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
+-- Определение мобильного устройства
+local IS_MOBILE = UserInput.TouchEnabled and not UserInput.KeyboardEnabled
+local IS_TOUCH  = UserInput.TouchEnabled
+
 do
     local getgc_   = getfenv().getgc or getgc
     local hookfunc = getfenv().hookfunction or hookfunction
@@ -3195,9 +3199,11 @@ local logoGui = instance("ScreenGui", pg, {
     IgnoreGuiInset = true,
 })
 
+-- Адаптивный размер кнопки для мобилок
+local logoSize = IS_MOBILE and 56 or 48
 local logoBtn = instance("ImageButton", logoGui, {
     Name = "LogoButton",
-    Size = UDim2.fromOffset(48, 48),
+    Size = UDim2.fromOffset(logoSize, logoSize),
     Position = UDim2.fromOffset(20, 120),
     BackgroundColor3 = C.panel,
     BackgroundTransparency = 0.05,
@@ -3230,14 +3236,24 @@ local main = instance("Frame", gui, {
     Name = "Main",
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.new(0.5, 0, 0.5, 0),
-    Size = UDim2.new(0.45, 0, 0.4, 0),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
 })
-instance("UISizeConstraint", main, {
-    MinSize = Vector2.new(320, 180),
-    MaxSize = Vector2.new(900, 420),
-})
+
+-- Адаптивные размеры для мобильных устройств
+if IS_MOBILE then
+    main.Size = UDim2.new(0.98, 0, 0.85, 0)
+    instance("UISizeConstraint", main, {
+        MinSize = Vector2.new(300, 200),
+        MaxSize = Vector2.new(700, 500),
+    })
+else
+    main.Size = UDim2.new(0.45, 0, 0.4, 0)
+    instance("UISizeConstraint", main, {
+        MinSize = Vector2.new(320, 180),
+        MaxSize = Vector2.new(900, 420),
+    })
+end
 
 local holder = instance("Frame", main, {
     Name = "Holder",
@@ -3286,11 +3302,13 @@ instance("TextLabel", header, {
     TextXAlignment = Enum.TextXAlignment.Left,
 })
 
+-- Адаптивный поиск для мобилок
+local searchWidth = IS_MOBILE and 0.5 or 0.22
 local searchBar = instance("Frame", main, {
     Name = "Search",
     AnchorPoint = Vector2.new(0.5, 0),
     Position = UDim2.new(0.5, 0, 1, -34),
-    Size = UDim2.new(0.22, 0, 0, 30),
+    Size = UDim2.new(searchWidth, 0, 0, IS_MOBILE and 36 or 30),
     BackgroundColor3 = C.panel,
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
@@ -3317,16 +3335,19 @@ local searchBox = instance("TextBox", searchBar, {
     PlaceholderColor3 = Color3.fromRGB(95, 90, 120),
     Text = "",
     TextColor3 = C.text,
-    TextSize = 11,
+    TextSize = IS_MOBILE and 14 or 11,
     Font = Enum.Font.Gotham,
     TextXAlignment = Enum.TextXAlignment.Left,
     ClearTextOnFocus = false,
 })
 
+-- Адаптивная кнопка настроек для мобилок
+local gearSize = IS_MOBILE and 40 or 30
+local gearPosX = IS_MOBILE and 0.8 or 0.61
 local gearBtn = instance("TextButton", main, {
     Name = "Gear",
-    Position = UDim2.new(0.61, 6, 1, -34),
-    Size = UDim2.new(0, 30, 0, 30),
+    Position = UDim2.new(gearPosX, 6, 1, -34),
+    Size = UDim2.new(0, gearSize, 0, gearSize),
     BackgroundColor3 = C.panel,
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
@@ -3345,10 +3366,13 @@ instance("ImageLabel", gearBtn, {
     ScaleType = Enum.ScaleType.Fit,
 })
 
+-- Адаптивная панель настроек для мобилок
+local settingsWidth = IS_MOBILE and 280 or 250
+local settingsHeight = IS_MOBILE and 340 or 312
 local settings = instance("Frame", main, {
     Name = "Settings",
-    Size = UDim2.new(0, 250, 0, 312),
-    Position = UDim2.new(0.5, -125, 1, -352),
+    Size = UDim2.new(0, settingsWidth, 0, settingsHeight),
+    Position = UDim2.new(0.5, -settingsWidth/2, 1, -settingsHeight - 40),
     BackgroundColor3 = C.panel,
     BackgroundTransparency = 0.02,
     BorderSizePixel = 0,
@@ -3581,10 +3605,13 @@ local resetBtn = instance("TextButton", settings, {
 })
 round(resetBtn, UDim.new(0, 8))
 
+-- Адаптивная палитра для мобилок
+local palWidth = IS_MOBILE and 240 or 200
+local palHeight = IS_MOBILE and 280 or 236
 local palette = instance("Frame", main, {
     Name = "Palette",
-    Size = UDim2.new(0, 200, 0, 236),
-    Position = UDim2.new(0.5, -100, 0.5, -118),
+    Size = UDim2.new(0, palWidth, 0, palHeight),
+    Position = UDim2.new(0.5, -palWidth/2, 0.5, -palHeight/2),
     BackgroundColor3 = C.panel,
     BackgroundTransparency = 0.02,
     BorderSizePixel = 0,
@@ -3593,9 +3620,11 @@ local palette = instance("Frame", main, {
 round(palette, UDim.new(0, 12))
 outline(palette, C.accent, 1, 0.4)
 
+local svWidth = IS_MOBILE and 220 or 180
+local svHeight = IS_MOBILE and 150 or 120
 local svArea = instance("Frame", palette, {
-    Position = UDim2.new(0, 10, 0, 10),
-    Size = UDim2.new(0, 180, 0, 120),
+    Position = UDim2.new(0, (palWidth - svWidth) / 2, 0, 10),
+    Size = UDim2.new(0, svWidth, 0, svHeight),
     BackgroundColor3 = Color3.fromRGB(255, 0, 0),
     BorderSizePixel = 0,
 })
@@ -3639,8 +3668,8 @@ round(svCursor, UDim.new(1, 0))
 outline(svCursor, C.white, 2, 0)
 
 local hueBar = instance("Frame", palette, {
-    Position = UDim2.new(0, 10, 0, 140),
-    Size = UDim2.new(0, 180, 0, 12),
+    Position = UDim2.new(0, (palWidth - svWidth) / 2, 0, svHeight + 20),
+    Size = UDim2.new(0, svWidth, 0, 12),
     BackgroundColor3 = C.white,
     BorderSizePixel = 0,
 })
@@ -3666,7 +3695,7 @@ round(hueCursor, UDim.new(0, 2))
 outline(hueCursor, C.black, 1, 0.3)
 
 local preview = instance("Frame", palette, {
-    Position = UDim2.new(0, 10, 0, 164),
+    Position = UDim2.new(0, (palWidth - svWidth) / 2, 0, svHeight + 44),
     Size = UDim2.new(0, 40, 0, 24),
     BackgroundColor3 = draft.color,
     BorderSizePixel = 0,
@@ -3675,7 +3704,7 @@ round(preview, UDim.new(0, 6))
 outline(preview, C.white, 1, 0.7)
 
 local hexLabel = instance("TextLabel", palette, {
-    Position = UDim2.new(0, 58, 0, 164),
+    Position = UDim2.new(0, (palWidth - svWidth) / 2 + 48, 0, svHeight + 44),
     Size = UDim2.new(0, 132, 0, 24),
     BackgroundTransparency = 1,
     Text = "",
@@ -3686,7 +3715,7 @@ local hexLabel = instance("TextLabel", palette, {
 })
 
 local palClose = instance("TextButton", palette, {
-    Position = UDim2.new(0, 10, 1, -38),
+    Position = UDim2.new(0, (palWidth - svWidth) / 2, 1, -38),
     Size = UDim2.new(0, 84, 0, 28),
     BackgroundColor3 = C.field,
     BorderSizePixel = 0,
@@ -3699,7 +3728,7 @@ local palClose = instance("TextButton", palette, {
 round(palClose, UDim.new(0, 8))
 
 local palApply = instance("TextButton", palette, {
-    Position = UDim2.new(0, 106, 1, -38),
+    Position = UDim2.new(0, (palWidth - svWidth) / 2 + 96, 1, -38),
     Size = UDim2.new(0, 84, 0, 28),
     BackgroundColor3 = C.white,
     BorderSizePixel = 0,
@@ -3896,7 +3925,7 @@ end
 local function buildColumn(data)
     local col = instance("Frame", holder, {
         Name = "Col_" .. data.title,
-        Size = UDim2.new(0.23, 0, 1, 0),
+        Size = UDim2.new(IS_MOBILE and 0.45 or 0.23, 0, 1, 0),
         BackgroundColor3 = state.color,
         BackgroundTransparency = state.transparency,
         BorderSizePixel = 0,
@@ -3940,9 +3969,10 @@ local function buildColumn(data)
         Position = UDim2.new(0, 0, 0, 42),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ScrollBarThickness = 2,
+        ScrollBarThickness = IS_MOBILE and 4 or 2,
         ScrollBarImageColor3 = Color3.fromRGB(90, 80, 180),
-        CanvasSize = UDim2.new(0, 0, 0, #data.items * 32 + 8),
+        CanvasSize = UDim2.new(0, 0, 0, #data.items * (IS_MOBILE and 38 or 32) + 8),
+        ScrollingDirection = Enum.ScrollingDirection.Y,
     })
     instance("UIListLayout", scroll, { Padding = UDim.new(0, 2) })
     instance("UIPadding", scroll, {
@@ -3955,9 +3985,10 @@ local function buildColumn(data)
         local on = false
         local pulse = item.pulse == true
 
+        local rowHeight = IS_MOBILE and 34 or 28
         local row = instance("Frame", scroll, {
             Name = item.name,
-            Size = UDim2.new(1, 0, 0, 28),
+            Size = UDim2.new(1, 0, 0, rowHeight),
             BackgroundColor3 = C.white,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
@@ -3979,7 +4010,7 @@ local function buildColumn(data)
             BackgroundTransparency = 1,
             Text = item.name,
             TextColor3 = C.textOff,
-            TextSize = 11,
+            TextSize = IS_MOBILE and 12 or 11,
             Font = Enum.Font.Gotham,
             TextXAlignment = Enum.TextXAlignment.Left,
         })
@@ -4025,6 +4056,7 @@ end
 applyStyle()
 refreshSettings()
 
+-- Адаптивное перетаскивание для мобилок
 do
     local dragging, moved = false, false
     local startMouse, startPos
@@ -4052,7 +4084,8 @@ do
     UserInput.InputChanged:Connect(function(input)
         if dragging and isMove(input) then
             local delta = UserInput:GetMouseLocation() - startMouse
-            if delta.Magnitude > 4 then moved = true end
+            local threshold = IS_MOBILE and 10 or 4
+            if delta.Magnitude > threshold then moved = true end
             if moved then
                 logoBtn.Position = UDim2.fromOffset(
                     startPos.X + delta.X,
