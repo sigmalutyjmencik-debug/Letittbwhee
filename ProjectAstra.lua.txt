@@ -1,0 +1,4285 @@
+local Players     = game:GetService("Players")
+local UserInput   = game:GetService("UserInputService")
+local Tween       = game:GetService("TweenService")
+local Http        = game:GetService("HttpService")
+local RS          = game:GetService("ReplicatedStorage")
+local Workspace   = game:GetService("Workspace")
+local RunService  = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+do
+    local getgc_   = getfenv().getgc or getgc
+    local hookfunc = getfenv().hookfunction or hookfunction
+    local newcc    = getfenv().newcclosure or function(f) return f end
+    local hookmm   = getfenv().hookmetamethod or hookmetamethod
+    local getncm   = getfenv().getnamecallmethod or getnamecallmethod
+
+    local R = {}
+    local function isGuarded(inst)
+        if R[inst] then return true end
+        local n = inst.Name
+        if #n == 36 and string.match(
+            n,
+            "^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$"
+        ) then
+            R[inst] = true
+            return true
+        end
+        return false
+    end
+
+    local origFire
+    origFire = hookfunc(Instance.new("RemoteEvent").FireServer, function(self, ...)
+        if isGuarded(self) then return origFire(self, ...) end
+        for _, v in ipairs({...}) do
+            if type(v) == "string" and string.find(string.lower(v), "kick") then
+                return
+            end
+        end
+        return origFire(self, ...)
+    end)
+
+    local origNC
+    origNC = hookmm(game, "__namecall", newcc(function(self, ...)
+        local m = getncm()
+        if self == LocalPlayer and (m == "Kick" or m == "kick" or m == "Destroy" or m == "destroy") then
+            return
+        end
+        return origNC(self, ...)
+    end))
+
+    local origKick
+    origKick = hookfunc(LocalPlayer.Kick, newcc(function(self, ...)
+        if not checkcaller() and self == LocalPlayer then return end
+        return origKick(self, ...)
+    end))
+
+    local origDestroy
+    origDestroy = hookfunc(LocalPlayer.Destroy, newcc(function(self, ...)
+        if not checkcaller() and self == LocalPlayer then return end
+        return origDestroy(self, ...)
+    end))
+
+    pcall(function()
+        for _, v in pairs(getgc_(true)) do
+            if type(v) == "table" then
+                pcall(function()
+                    if rawget(v, "Send") and type(rawget(v, "Send")) == "function"
+                        and rawget(v, "Get") and rawget(v, "Encrypt") then
+                        local origSend
+                        origSend = hookfunc(v.Send, newcc(function(cmd, ...)
+                            if type(cmd) == "string" then
+                                local c = string.lower(cmd)
+                                if c == "detected" or c == "logerror" then return end
+                            end
+                            return origSend(cmd, ...)
+                        end))
+                    end
+                    if rawget(v, "Kill") and type(rawget(v, "Kill")) == "function"
+                        and rawget(v, "Disconnect") then
+                        hookfunc(v.Kill, newcc(function(...) return end))
+                        hookfunc(v.Disconnect, newcc(function(...) return end))
+                    end
+                end)
+            end
+        end
+    end)
+end
+
+local pg = LocalPlayer:WaitForChild("PlayerGui")
+for _, n in ipairs({ "CheatMenuGui", "AstraLogoGui", "invviewer" }) do
+    local old = pg:FindFirstChild(n)
+    if old then old:Destroy() end
+end
+
+local ASSETS = {
+    logo   = "rbxassetid://134859663853902",
+    gear   = "rbxassetid://106205298246017",
+    search = "rbxassetid://75588061116637",
+    close  = "rbxassetid://134892275535697",
+}
+
+local C = {
+    accent   = Color3.fromRGB(96, 82, 230),
+    accent2  = Color3.fromRGB(56, 46, 148),
+    panel    = Color3.fromRGB(18, 17, 26),
+    field    = Color3.fromRGB(30, 27, 46),
+    text     = Color3.fromRGB(255, 255, 255),
+    textOff  = Color3.fromRGB(165, 160, 185),
+    title    = Color3.fromRGB(240, 238, 255),
+    white    = Color3.new(1, 1, 1),
+    black    = Color3.new(0, 0, 0),
+    header   = Color3.fromRGB(55, 50, 100),
+}
+
+_G.RANGE_SQ          = 25 * 25
+_G.delay             = 0.1
+_G.strafeRange       = 25
+_G.selectedTargeting = "closest"
+_G.speed             = 27
+_G.radius            = 2
+
+local Essentials = {}
+do
+    local function getLocalHRP()
+        local char = LocalPlayer.Character
+        return char and char:FindFirstChild("HumanoidRootPart")
+    end
+
+    function Essentials.getLowestHealthNearbyPlayer()
+        local localHRP = getLocalHRP()
+        if not localHRP then return nil end
+
+        local lowestHealth = math.huge
+        local targetPlayer = nil
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                local targetHRP = player.Character:FindFirstChild("HumanoidRootPart")
+                if humanoid and targetHRP and humanoid.Health > 0 then
+                    local distance = (targetHRP.Position - localHRP.Position).Magnitude
+                    if distance <= _G.strafeRange and humanoid.Health < lowestHealth then
+                        lowestHealth = humanoid.Health
+                        targetPlayer = player
+                    end
+                end
+            end
+        end
+
+        return targetPlayer
+    end
+
+    function Essentials.getClosestPlayer()
+        local hrp = getLocalHRP()
+        if not hrp then return nil end
+
+        local closest = nil
+        local shortest = math.huge
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local targetHRP = player.Character:FindFirstChild("HumanoidRootPart")
+                if targetHRP then
+                    local dist = (hrp.Position - targetHRP.Position).Magnitude
+                    if dist < shortest then
+                        shortest = dist
+                        closest = player
+                    end
+                end
+            end
+        end
+
+        return closest
+    end
+end
+
+local KillAura = {}
+do
+    local running = false
+    local attackRemote
+
+    local function getAttack()
+        if attackRemote then return attackRemote end
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return nil end
+        attackRemote = remotes:WaitForChild("Attack", 10)
+        return attackRemote
+    end
+
+    local function loop()
+        while running do
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local attack = getAttack()
+
+            if hrp and attack then
+                local target
+                if _G.selectedTargeting == "lowest" then
+                    target = Essentials.getLowestHealthNearbyPlayer()
+                else
+                    target = Essentials.getClosestPlayer()
+                end
+
+                if target and target.Character then
+                    local tHRP = target.Character:FindFirstChild("HumanoidRootPart")
+                    if tHRP then
+                        local d = hrp.Position - tHRP.Position
+                        if (d.X * d.X + d.Z * d.Z) <= _G.RANGE_SQ then
+                            pcall(function()
+                                attack:InvokeServer(target.Character)
+                            end)
+                        end
+                    end
+                end
+            end
+
+            task.wait(_G.delay or 0.1)
+        end
+    end
+
+    function KillAura.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function KillAura.stop()
+        running = false
+    end
+end
+
+local TargetStrafe = {}
+do
+    local running = false
+    local hbConn
+    local timeAcc = 0
+
+    local function onHeartbeat(dt)
+        if not running then return end
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local target
+        if _G.selectedTargeting == "lowest" then
+            target = Essentials.getLowestHealthNearbyPlayer()
+        else
+            target = Essentials.getClosestPlayer()
+        end
+
+        local tChar = target and target.Character
+        local tHRP = tChar and tChar:FindFirstChild("HumanoidRootPart")
+        if not tHRP then return end
+
+        timeAcc = timeAcc + dt * _G.speed
+
+        local offset = Vector3.new(
+            math.cos(timeAcc) * _G.radius,
+            0,
+            math.sin(timeAcc) * _G.radius
+        )
+
+        local targetPos = tHRP.Position
+        hrp.CFrame = CFrame.new(targetPos + offset, targetPos)
+    end
+
+    function TargetStrafe.start()
+        if running then return end
+        running = true
+        timeAcc = 0
+        hbConn = RunService.Heartbeat:Connect(onHeartbeat)
+    end
+
+    function TargetStrafe.stop()
+        running = false
+        if hbConn then
+            hbConn:Disconnect()
+            hbConn = nil
+        end
+    end
+end
+
+local Triggerbot = {}
+do
+    local running = false
+    local currentTarget = nil
+    local RANGE_SQ = 20 * 20
+
+    local function step()
+        if not running then
+            currentTarget = nil
+            return
+        end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local cam = Workspace.CurrentCamera
+        if not cam then return end
+
+        local viewport = cam.ViewportSize
+        local ray = cam:ViewportPointToRay(viewport.X / 2, viewport.Y / 2)
+
+        local params = RaycastParams.new()
+        params.FilterDescendantsInstances = { char }
+        params.FilterType = Enum.RaycastFilterType.Blacklist
+
+        local result = Workspace:Raycast(ray.Origin, ray.Direction * 500, params)
+
+        local newTarget = nil
+        if result then
+            local model = result.Instance:FindFirstAncestorOfClass("Model")
+            if model and model ~= char and model:FindFirstChildOfClass("Humanoid") then
+                newTarget = model
+            end
+        end
+
+        currentTarget = newTarget
+        if not currentTarget then return end
+
+        local tHRP = currentTarget:FindFirstChild("HumanoidRootPart")
+        local hum = currentTarget:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 or not tHRP then return end
+
+        local d = hrp.Position - tHRP.Position
+        if (d.X * d.X + d.Z * d.Z) <= RANGE_SQ then
+            local attack = RS:WaitForChild("GameRemotes"):WaitForChild("Attack")
+            pcall(function()
+                attack:InvokeServer(currentTarget)
+            end)
+        end
+    end
+
+    local function loop()
+        while running do
+            step()
+            task.wait()
+        end
+    end
+
+    function Triggerbot.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function Triggerbot.stop()
+        running = false
+        currentTarget = nil
+    end
+end
+
+local Hitbox = {}
+do
+    local running = false
+    local hbConn
+
+    local EXPANDED_SIZE = Vector3.new(10, 10, 10)
+    local NORMAL_SIZE   = Vector3.new(2, 2, 1)
+
+    local function changeTorsoSize(player, size, massless, transparency)
+        local char = player.Character
+        if not char then return end
+        local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+        if torso then
+            torso.Size = size
+            torso.Massless = massless
+            torso.Transparency = transparency
+        end
+    end
+
+    local function loop()
+        hbConn = RunService.Heartbeat:Connect(function()
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    changeTorsoSize(player, EXPANDED_SIZE, true, 0.999)
+                end
+            end
+        end)
+    end
+
+    function Hitbox.start()
+        if running then return end
+        running = true
+        loop()
+    end
+
+    function Hitbox.stop()
+        if not running then return end
+        running = false
+
+        if hbConn then
+            hbConn:Disconnect()
+            hbConn = nil
+        end
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                changeTorsoSize(player, NORMAL_SIZE, true, 0)
+            end
+        end
+    end
+end
+
+local CombatLog = {}
+do
+    local running = false
+
+    local function checkHealth()
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return end
+
+        if humanoid.Health <= humanoid.MaxHealth * 0.4 then
+            game:Shutdown()
+        end
+    end
+
+    local function loop()
+        while running do
+            checkHealth()
+            task.wait()
+        end
+    end
+
+    function CombatLog.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function CombatLog.stop()
+        running = false
+    end
+end
+
+local AutoSafeZone = {}
+do
+    local running = false
+
+    local SAFE_CFRAME = CFrame.new(1000 * 3, 60 * 3, 1000 * 3)
+
+    local function checkHealth()
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        local humanoid = char:FindFirstChild("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not hrp then return end
+
+        if humanoid.Health <= humanoid.MaxHealth * 0.4 then
+            hrp.CFrame = SAFE_CFRAME
+        end
+    end
+
+    local function loop()
+        while running do
+            checkHealth()
+            task.wait(0.25)
+        end
+    end
+
+    function AutoSafeZone.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function AutoSafeZone.stop()
+        running = false
+    end
+end
+
+local NoFall = {}
+do
+    local remotes = RS:WaitForChild("GameRemotes")
+    local demo = remotes:WaitForChild("Demo")
+    local enabled = false
+
+    function NoFall.start()
+        if enabled then return end
+        enabled = true
+        if demo.Parent == remotes then
+            demo.Parent = Workspace
+        end
+    end
+
+    function NoFall.stop()
+        if not enabled then return end
+        enabled = false
+        if demo.Parent == Workspace then
+            demo.Parent = remotes
+        end
+    end
+end
+
+local Jesus = {}
+do
+    local fluidFolder = Workspace:FindFirstChild("Fluid")
+    local conn
+    local enabled = false
+
+    local function isWater(part)
+        return part:IsA("BasePart")
+            and (part.Name == "Water" or part.Name == "Lava")
+    end
+
+    local function setCollision(state)
+        if not fluidFolder then return end
+
+        for _, obj in ipairs(fluidFolder:GetDescendants()) do
+            if isWater(obj) then
+                obj.CanCollide = state
+            end
+        end
+    end
+
+    function Jesus.start()
+        if enabled then return end
+        enabled = true
+        if not fluidFolder then return end
+
+        setCollision(true)
+
+        conn = fluidFolder.DescendantAdded:Connect(function(obj)
+            if enabled and isWater(obj) then
+                obj.CanCollide = true
+            end
+        end)
+    end
+
+    function Jesus.stop()
+        if not enabled then return end
+        enabled = false
+
+        if conn then
+            conn:Disconnect()
+            conn = nil
+        end
+
+        setCollision(false)
+    end
+end
+
+local AutoArmor = {}
+do
+    local running = false
+    local moveItem
+    local itemInfo
+
+    local TIERS = { Diamond = 4, Ruby = 3, Iron = 2, Gold = 2, Steel = 2, Stone = 1 }
+    local ARMOR = { Helmet = 103, Chestplate = 102, Leggings = 101, Boots = 100 }
+
+    local function getMoveItem()
+        if moveItem then return moveItem end
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return nil end
+        moveItem = remotes:WaitForChild("MoveItem", 10)
+        return moveItem
+    end
+
+    local function getItemInfo()
+        if itemInfo then return itemInfo end
+        local mod = RS:WaitForChild("AssetsMod", 10)
+        if not mod then return nil end
+        local info = mod:WaitForChild("ItemInfo", 10)
+        if not info then return nil end
+        local ok, result = pcall(require, info)
+        if ok then itemInfo = result end
+        return itemInfo
+    end
+
+    local function decode(slot)
+        local ok, data = pcall(function()
+            return Http:JSONDecode(slot.Value)
+        end)
+        return ok and data or nil
+    end
+
+    local function getTier(name)
+        for prefix, tier in pairs(TIERS) do
+            if string.find(name, "^" .. prefix) then
+                local afterPrefix = string.sub(name, #prefix + 1, #prefix + 1)
+                if afterPrefix == "" or afterPrefix == " " or string.match(afterPrefix, "%u") then
+                    return tier
+                end
+            end
+        end
+        local info = getItemInfo()
+        local entry = info and info[name]
+        return entry and (entry.tier or entry.Tier) or 0
+    end
+
+    local function getArmorType(name)
+        for aType, id in pairs(ARMOR) do
+            if string.find(name, aType) then
+                return id
+            end
+        end
+        return nil
+    end
+
+    local function isBetter(new, old)
+        local newTier = getTier(new.name)
+        local oldTier = getTier(old.name)
+
+        local newDur = new.durability or 0
+        local oldDur = old.durability or 0
+
+        local info = getItemInfo()
+        local newInfo = info and info[new.name]
+        local oldInfo = info and info[old.name]
+        local newMax = (newInfo and newInfo.durability) or 100
+        local oldMax = (oldInfo and oldInfo.durability) or 100
+
+        if oldDur <= (oldMax * 0.1) and newDur > (newMax * 0.1) then
+            if newTier >= (oldTier - 1) then
+                return true
+            end
+        end
+
+        if newTier > oldTier then
+            if newDur > (newMax * 0.1) or oldDur <= (oldMax * 0.05) then
+                return true
+            end
+        elseif newTier == oldTier then
+            if newDur > oldDur then
+                return true
+            end
+        end
+
+        if newTier == oldTier and newDur == oldDur then
+            return newMax > oldMax
+        end
+
+        return false
+    end
+
+    local function autoEquipArmor()
+        local move = getMoveItem()
+        if not move then return end
+
+        local char = LocalPlayer.Character
+        if not char then return end
+
+        local inv = char:FindFirstChild("Inventory")
+        if not inv then return end
+
+        local best = {
+            [103] = { tier = -1, dur = -1, idx = nil },
+            [102] = { tier = -1, dur = -1, idx = nil },
+            [101] = { tier = -1, dur = -1, idx = nil },
+            [100] = { tier = -1, dur = -1, idx = nil },
+        }
+
+        for i = 0, 35 do
+            local slot = inv:FindFirstChild("Slot" .. i)
+            local data = slot and decode(slot)
+
+            if data and data.count and data.count >= 1 and data.name then
+                local armorSlot = getArmorType(data.name)
+                if armorSlot then
+                    local tier = getTier(data.name)
+                    local dur = data.durability or 0
+
+                    if tier > best[armorSlot].tier
+                        or (tier == best[armorSlot].tier and dur > best[armorSlot].dur) then
+                        best[armorSlot] = { tier = tier, dur = dur, idx = i, name = data.name }
+                    end
+                end
+            end
+        end
+
+        for slot, item in pairs(best) do
+            if item.idx then
+                local equippedSlot = inv:FindFirstChild("Slot" .. slot)
+                local equipped = equippedSlot and decode(equippedSlot)
+
+                if not equipped or (equipped.count or 0) <= 0 then
+                    pcall(function() move:InvokeServer(item.idx, slot, true) end)
+                elseif isBetter(item, equipped) then
+                    pcall(function() move:InvokeServer(item.idx, slot, true) end)
+                end
+            end
+        end
+    end
+
+    local function loop()
+        while running do
+            autoEquipArmor()
+            task.wait()
+        end
+    end
+
+    function AutoArmor.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function AutoArmor.stop()
+        running = false
+    end
+end
+
+local AutoDrop = {}
+do
+    local running = false
+
+    local function loop()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local dropItem = remotes:WaitForChild("DropItem", 10)
+        if not dropItem then return end
+
+        while running do
+            pcall(function()
+                dropItem:InvokeServer(true)
+            end)
+            task.wait()
+        end
+    end
+
+    function AutoDrop.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function AutoDrop.stop()
+        running = false
+    end
+end
+
+local AutoEat = {}
+do
+    local running = false
+    local consumeRemote
+
+    local function getConsume()
+        if consumeRemote then return consumeRemote end
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return nil end
+        consumeRemote = remotes:WaitForChild("ConsumeItem", 10)
+        return consumeRemote
+    end
+
+    local function getInventory()
+        local char = LocalPlayer.Character
+        if not char then return nil end
+        return char:FindFirstChild("Inventory")
+    end
+
+    local function getSelectedSlot()
+        local char = LocalPlayer.Character
+        if not char then return nil end
+        local sel = char:FindFirstChild("SelectedSlot")
+        return sel and sel.Value or nil
+    end
+
+    local function loop()
+        while running do
+            local consume = getConsume()
+            local inv = getInventory()
+            local slot = getSelectedSlot()
+
+            if consume and inv and slot ~= nil then
+                pcall(function()
+                    consume:InvokeServer(inv, slot)
+                end)
+            end
+
+            task.wait(0.1)
+        end
+    end
+
+    function AutoEat.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function AutoEat.stop()
+        running = false
+    end
+end
+
+local AutoTool = {}
+do
+    local running = false
+    local CGlobals, BlockInfo, ItemInfo, ItemLevels, BlockHighlights
+
+    local function getModules()
+        if CGlobals and BlockInfo and ItemInfo and ItemLevels and BlockHighlights then return true end
+
+        local char = LocalPlayer.Character
+        if not char then return false end
+        local inv = char:FindFirstChild("Inventory")
+        if not inv then return false end
+
+        local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+        if not ps then return false end
+        local main = ps:FindFirstChild("MainLocalScript")
+        if not main then return false end
+
+        local assetsMod = RS:FindFirstChild("AssetsMod")
+        if not assetsMod then return false end
+
+        local cg = main:FindFirstChild("CGlobals")
+        if cg then
+            local ok, res = pcall(require, cg)
+            if ok then CGlobals = res end
+        end
+
+        local bh = main:FindFirstChild("BlockHighlights")
+        if bh then
+            local ok, res = pcall(require, bh)
+            if ok then BlockHighlights = res end
+        end
+
+        local bi = assetsMod:FindFirstChild("BlockInfo")
+        if bi then
+            local ok, res = pcall(require, bi)
+            if ok then BlockInfo = res end
+        end
+
+        local ii = assetsMod:FindFirstChild("ItemInfo")
+        if ii then
+            local ok, res = pcall(require, ii)
+            if ok then ItemInfo = res end
+        end
+
+        local il = assetsMod:FindFirstChild("ItemLevels")
+        if il then
+            local ok, res = pcall(require, il)
+            if ok then ItemLevels = res end
+        end
+
+        return CGlobals ~= nil
+            and BlockInfo ~= nil
+            and ItemInfo ~= nil
+            and ItemLevels ~= nil
+            and BlockHighlights ~= nil
+    end
+
+    local function getHotbar()
+        local hud = pg:FindFirstChild("HUDGui")
+        return hud and hud:FindFirstChild("Hotbar")
+    end
+
+    local function getSlotButton(index)
+        local hotbar = getHotbar()
+        if not hotbar then return nil end
+        local targetX = index * 40 + 6
+        for _, btn in ipairs(hotbar:GetChildren()) do
+            if btn:IsA("TextButton") and btn.Position.X.Offset == targetX then
+                return btn
+            end
+        end
+        return nil
+    end
+
+    local function setSlot(index)
+        local slot = getSlotButton(index)
+        if not slot then return end
+        for _, conn in ipairs(getconnections(slot.MouseButton1Click)) do
+            conn:Fire()
+        end
+    end
+
+    local function decodeSlot(slotVal)
+        local ok, data = pcall(function()
+            return Http:JSONDecode(slotVal.Value)
+        end)
+        if ok and data and data.count and data.count > 0 then
+            return data
+        end
+        return nil
+    end
+
+    local function getItemSpeed(itemName, reqType, betterTool)
+        local itemData = ItemInfo and ItemInfo[itemName]
+        if itemData and (itemData.tooltype == reqType or itemData.tooltype == betterTool) then
+            return (ItemLevels and ItemLevels.speedMul[itemData.level]) or 1
+        end
+        return 1
+    end
+
+    local function getBestToolSlot(blockName)
+        local blockData = BlockInfo and BlockInfo[blockName]
+        if not blockData then return nil end
+
+        local char = LocalPlayer.Character
+        if not char then return nil end
+        local inv = char:FindFirstChild("Inventory")
+        if not inv then return nil end
+
+        local bestSlot, maxSpeed = nil, 0
+        local reqType, betterTool = blockData.toolRequire, blockData.betterTool
+
+        for i = 0, 8 do
+            local slotVal = inv:FindFirstChild("Slot" .. i)
+            if slotVal then
+                local data = decodeSlot(slotVal)
+                if data then
+                    local speed = getItemSpeed(data.name, reqType, betterTool)
+                    if speed > maxSpeed then
+                        maxSpeed = speed
+                        bestSlot = i
+                    end
+                end
+            end
+        end
+
+        return bestSlot
+    end
+
+    local function getSelectedSlotObj()
+        local charModel = Workspace:FindFirstChild(LocalPlayer.Name)
+        return charModel and charModel:FindFirstChild("SelectedSlot")
+    end
+
+    local function loop()
+        while running do
+            if getModules() then
+                local selectedSlotObj = getSelectedSlotObj()
+                if selectedSlotObj then
+                    local targetPos = CGlobals.TargetBlockCoordinate
+                    local targetBlock = CGlobals.BlockUnderMouse
+
+                    if targetPos and targetBlock and BlockHighlights.IsBreaking(targetPos) then
+                        local bestSlot = getBestToolSlot(targetBlock.Name)
+                        if bestSlot and selectedSlotObj.Value ~= bestSlot then
+                            pcall(setSlot, bestSlot)
+                        end
+                    end
+                end
+            end
+            task.wait()
+        end
+    end
+
+    function AutoTool.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function AutoTool.stop()
+        running = false
+    end
+end
+
+local FastBreak = {}
+do
+    local running = false
+
+    local function loop()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local acceptBreak = remotes:WaitForChild("AcceptBreakBlock", 10)
+        if not acceptBreak then return end
+
+        while running do
+            pcall(function()
+                acceptBreak:InvokeServer()
+            end)
+            task.wait()
+        end
+    end
+
+    function FastBreak.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function FastBreak.stop()
+        running = false
+    end
+end
+
+local Freeze = {}
+do
+    local running = false
+
+    local function setAnchored(value)
+        local char = LocalPlayer.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.Anchored = value
+        end
+    end
+
+    function Freeze.start()
+        if running then return end
+        running = true
+        setAnchored(true)
+    end
+
+    function Freeze.stop()
+        if not running then return end
+        running = false
+        setAnchored(false)
+    end
+end
+
+local ChestDumper = {}
+do
+    local running = false
+
+    local function run()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local moveItem = remotes:WaitForChild("MoveItem", 10)
+        if not moveItem then return end
+
+        for i = 36, 62 do
+            task.spawn(function()
+                pcall(function()
+                    moveItem:InvokeServer(i, i - 27, true)
+                end)
+            end)
+        end
+    end
+
+    function ChestDumper.start()
+        if running then return end
+        running = true
+        task.spawn(function()
+            run()
+            running = false
+        end)
+    end
+
+    function ChestDumper.stop()
+        running = false
+    end
+end
+
+local DumpDupe = {}
+do
+    local running = false
+
+    local function run()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local moveItem = remotes:WaitForChild("MoveItem", 10)
+        if not moveItem then return end
+
+        local sortItems = remotes:FindFirstChild("SortItem") or remotes:FindFirstChild("SortItems")
+
+        for i = 36, 62 do
+            task.spawn(function()
+                pcall(function()
+                    moveItem:InvokeServer(i, i - 27, true)
+                end)
+            end)
+        end
+
+        task.wait(0.5)
+
+        if sortItems then
+            for i = 36, 62 do
+                task.spawn(function()
+                    pcall(function()
+                        sortItems:InvokeServer(i)
+                    end)
+                end)
+            end
+        end
+    end
+
+    function DumpDupe.start()
+        if running then return end
+        running = true
+        task.spawn(function()
+            run()
+            running = false
+        end)
+    end
+
+    function DumpDupe.stop()
+        running = false
+    end
+end
+
+local AutoDupeChest = {}
+do
+    local running = false
+
+    local function loop()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local sortItems = remotes:FindFirstChild("SortItem") or remotes:FindFirstChild("SortItems")
+        if not sortItems then return end
+
+        while running do
+            for i = 36, 62 do
+                task.spawn(function()
+                    pcall(function()
+                        sortItems:InvokeServer(i)
+                    end)
+                end)
+            end
+            task.wait()
+        end
+    end
+
+    function AutoDupeChest.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function AutoDupeChest.stop()
+        running = false
+    end
+end
+
+local DupeEntireChest = {}
+do
+    local running = false
+
+    local function run()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local sortItems = remotes:FindFirstChild("SortItem") or remotes:FindFirstChild("SortItems")
+        if not sortItems then return end
+
+        for i = 36, 62 do
+            task.spawn(function()
+                pcall(function()
+                    sortItems:InvokeServer(i)
+                end)
+            end)
+        end
+    end
+
+    function DupeEntireChest.start()
+        if running then return end
+        running = true
+        task.spawn(function()
+            run()
+            running = false
+        end)
+    end
+
+    function DupeEntireChest.stop()
+        running = false
+    end
+end
+
+local DupeFirstSlot = {}
+do
+    local running = false
+
+    local function run()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local sortItems = remotes:FindFirstChild("SortItem") or remotes:FindFirstChild("SortItems")
+        if not sortItems then return end
+
+        pcall(function()
+            sortItems:InvokeServer(36)
+        end)
+    end
+
+    function DupeFirstSlot.start()
+        if running then return end
+        running = true
+        task.spawn(function()
+            run()
+            running = false
+        end)
+    end
+
+    function DupeFirstSlot.stop()
+        running = false
+    end
+end
+
+local DupeSelected = {}
+do
+    local running = false
+
+    local function run()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local moveItems = remotes:FindFirstChild("MoveItem") or remotes:FindFirstChild("MoveItems")
+        if not moveItems then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        if not hud then return end
+        local inventory = hud:FindFirstChild("Inventory")
+        if not inventory then return end
+        local slots = inventory:FindFirstChild("Slots")
+        if not slots then return end
+
+        local slot = slots:FindFirstChild("Slot-1")
+        if not slot then return end
+        local slotNA = slot:FindFirstChild("SlotNA")
+        if not slotNA then return end
+        local b = slotNA:FindFirstChild("Count")
+        if not b then return end
+
+        local bCount = tonumber(b.Text)
+        if not bCount then return end
+        if bCount == 64 then return end
+
+        local howmuch = 64 - bCount
+
+        pcall(function()
+            moveItems:InvokeServer(-1, 82, true, -howmuch)
+        end)
+    end
+
+    function DupeSelected.start()
+        if running then return end
+        running = true
+        task.spawn(function()
+            run()
+            running = false
+        end)
+    end
+
+    function DupeSelected.stop()
+        running = false
+    end
+end
+
+local GetInfinityItems = {}
+do
+    local running = false
+
+    local function run()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local moveItems = remotes:FindFirstChild("MoveItem") or remotes:FindFirstChild("MoveItems")
+        if not moveItems then return end
+
+        pcall(function()
+            moveItems:InvokeServer(-1, 0, true, -9.99999999919999999919999919999919199191919999199191919991999199e100)
+        end)
+    end
+
+    function GetInfinityItems.start()
+        if running then return end
+        running = true
+        task.spawn(function()
+            run()
+            running = false
+        end)
+    end
+
+    function GetInfinityItems.stop()
+        running = false
+    end
+end
+
+local GetLava = {}
+do
+    function GetLava.start()
+        local remotes = RS:FindFirstChild("GameRemotes")
+        if not remotes then return end
+        local useblock = remotes:FindFirstChild("UseBlock")
+        if not useblock then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local df  = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local xStr, yStr, zStr = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not xStr then return end
+
+        local xlp = tonumber(xStr)
+        local ylp = tonumber(yStr) - 2
+        local zlp = tonumber(zStr)
+
+        if xlp and ylp and zlp then
+            pcall(function()
+                useblock:InvokeServer(xlp, ylp, zlp, 0)
+            end)
+        end
+    end
+
+    function GetLava.stop() end
+end
+
+local Immortality = {}
+do
+    function Immortality.start()
+        local remotes = RS:FindFirstChild("GameRemotes")
+        if not remotes then return end
+        local moveItem = remotes:FindFirstChild("MoveItem")
+        if not moveItem then return end
+
+        pcall(function()
+            moveItem:InvokeServer(101, 9, true)
+        end)
+    end
+
+    function Immortality.stop() end
+end
+
+local InfinityHealth = {}
+do
+    local running = false
+
+    local function decode(slot)
+        local ok, data = pcall(function()
+            return Http:JSONDecode(slot.Value)
+        end)
+        return ok and data or nil
+    end
+
+    local function getInv()
+        local char = LocalPlayer.Character
+        if not char then return nil end
+        return char:FindFirstChild("Inventory")
+    end
+
+    local function loop()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local moveItems = remotes:FindFirstChild("MoveItem") or remotes:FindFirstChild("MoveItems")
+        if not moveItems then return end
+
+        while running do
+            local inv = getInv()
+            if inv then
+                local slot = inv:FindFirstChild("Slot101")
+                local data = slot and decode(slot)
+                if data and data.name then
+                    pcall(function()
+                        moveItems:InvokeServer(101, 9, true)
+                    end)
+                end
+            end
+            task.wait()
+        end
+    end
+
+    function InfinityHealth.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function InfinityHealth.stop()
+        running = false
+    end
+end
+
+local Creative = {}
+do
+    local running = false
+    local charConn
+
+    local function applyInstamine(char)
+        if not char then return end
+        if not char:FindFirstChild("Gamemode") then
+            local g = Instance.new("IntValue")
+            g.Name = "Gamemode"
+            g.Parent = char
+        end
+        char.Gamemode.Value = 1
+    end
+
+    function Creative.start()
+        if running then return end
+        running = true
+
+        if LocalPlayer.Character then
+            applyInstamine(LocalPlayer.Character)
+        end
+
+        charConn = LocalPlayer.CharacterAdded:Connect(function(char)
+            char:WaitForChild("Gamemode", 5)
+            if running then
+                applyInstamine(char)
+            end
+        end)
+    end
+
+    function Creative.stop()
+        if not running then return end
+        running = false
+
+        if charConn then
+            charConn:Disconnect()
+            charConn = nil
+        end
+
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("Gamemode") then
+            char.Gamemode.Value = 0
+        end
+    end
+end
+
+local MoreSlots = {}
+do
+    local running = false
+
+    local function loop()
+        while running do
+            local hud = pg:FindFirstChild("HUDGui")
+            local inventory = hud and hud:FindFirstChild("Inventory")
+            if inventory then
+                local chest = inventory:FindFirstChild("Chest")
+                local crafting = inventory:FindFirstChild("Crafting")
+                local mirror = inventory:FindFirstChild("Mirror")
+                local result = inventory:FindFirstChild("ResultSlot")
+                if chest then chest.Visible = true end
+                if crafting then crafting.Visible = false end
+                if mirror then mirror.Visible = false end
+                if result then result.Visible = false end
+
+                local slots = inventory:FindFirstChild("Slots")
+                if slots then
+                    local hidden = {
+                        "Slot100", "Slot101", "Slot102", "Slot103",
+                        "Slot80", "Slot81", "Slot82", "Slot83", "Slot84",
+                        "Slot85", "Slot86", "Slot87", "Slot88"
+                    }
+                    for _, slotName in ipairs(hidden) do
+                        local slot = slots:FindFirstChild(slotName)
+                        if slot then
+                            slot.Visible = false
+                        end
+                    end
+                end
+            end
+            task.wait()
+        end
+    end
+
+    function MoreSlots.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function MoreSlots.stop()
+        running = false
+    end
+end
+
+local Nuker = {}
+do
+    local running = false
+
+    local function loop()
+        local remotes = RS:WaitForChild("GameRemotes", 10)
+        if not remotes then return end
+        local bb = remotes:WaitForChild("BreakBlock", 10)
+        local abb = remotes:WaitForChild("AcceptBreakBlock", 10)
+        if not bb or not abb then return end
+
+        while running do
+            local hud = pg:FindFirstChild("HUDGui")
+            local df = hud and hud:FindFirstChild("DataFrame")
+            local coordText = df and df:FindFirstChild("Coord")
+            if coordText then
+                local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+                if x and y and z then
+                    pcall(function()
+                        bb:FireServer(tonumber(x), tonumber(y) - 1, tonumber(z))
+                        abb:InvokeServer()
+                    end)
+                end
+            end
+            task.wait()
+        end
+    end
+
+    function Nuker.start()
+        if running then return end
+        running = true
+        task.spawn(loop)
+    end
+
+    function Nuker.stop()
+        running = false
+    end
+end
+
+local Nuker3x3 = {}
+do
+    function Nuker3x3.start()
+        local remotes = RS:FindFirstChild("GameRemotes")
+        if not remotes then return end
+        local bb = remotes:FindFirstChild("BreakBlock")
+        local abb = remotes:FindFirstChild("AcceptBreakBlock")
+        if not bb or not abb then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        local positions = {}
+        for ox = -1, 1 do
+            for oy = -1, 1 do
+                for oz = -1, 1 do
+                    positions[#positions + 1] = {x + ox, y + oy, z + oz}
+                end
+            end
+        end
+
+        for i = 1, #positions do
+            task.spawn(function()
+                local px, py, pz = unpack(positions[i])
+                pcall(function()
+                    bb:FireServer(px, py, pz)
+                    abb:InvokeServer()
+                end)
+            end)
+        end
+    end
+
+    function Nuker3x3.stop() end
+end
+
+local Nuker6x6 = {}
+do
+    function Nuker6x6.start()
+        local remotes = RS:FindFirstChild("GameRemotes")
+        if not remotes then return end
+        local bb = remotes:FindFirstChild("BreakBlock")
+        local abb = remotes:FindFirstChild("AcceptBreakBlock")
+        if not bb or not abb then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        local positions = {}
+        for ox = -3, 2 do
+            for oy = -3, 2 do
+                for oz = -3, 2 do
+                    positions[#positions + 1] = {x + ox, y + oy, z + oz}
+                end
+            end
+        end
+
+        for i = 1, #positions do
+            task.spawn(function()
+                local px, py, pz = unpack(positions[i])
+                pcall(function()
+                    bb:FireServer(px, py, pz)
+                    abb:InvokeServer()
+                end)
+            end)
+        end
+    end
+
+    function Nuker6x6.stop() end
+end
+
+local SkyBuild = {}
+do
+    local running = false
+    local coordConn
+    local M_World, BlocksByName
+
+    local function loadModules()
+        if M_World and BlocksByName then return true end
+        local ok1, world = pcall(function()
+            return require(LocalPlayer.PlayerScripts.MainLocalScript.CWorld)
+        end)
+        local ok2, ids = pcall(function()
+            return require(RS.AssetsMod.IDs)
+        end)
+        if ok1 then M_World = world end
+        if ok2 and ids and ids.ByName and ids.ByName.Blocks then
+            BlocksByName = ids.ByName.Blocks
+        end
+        return M_World ~= nil and BlocksByName ~= nil
+    end
+
+    local function onCoordChanged()
+        if not running then return end
+        if not loadModules() then return end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local selected = char:FindFirstChild("SelectedSlot")
+        local placeSlot = selected and selected.Value
+        if not placeSlot then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local inv = hud and hud:FindFirstChild("Inventory")
+        local slots = inv and inv:FindFirstChild("Slots")
+        local slotGui = slots and slots:FindFirstChild("Slot" .. placeSlot)
+        if not slotGui or not slotGui.Slot.Display:FindFirstChild("SlotB") then return end
+
+        local realBlock
+        for _, v in pairs(slotGui.Slot.Display.SlotB:GetChildren()) do
+            realBlock = v.Name
+            break
+        end
+        if not realBlock then return end
+
+        local itemblock_info = BlocksByName[realBlock]
+        if not itemblock_info then return end
+
+        local df = hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        local block, chunk = M_World.getBlock(x, y, z)
+        local canPlace = false
+        if not block then
+            canPlace = true
+        else
+            for _, v in pairs(block) do
+                if v == 0 then
+                    canPlace = true
+                    break
+                end
+            end
+        end
+        if not canPlace then return end
+
+        M_World.placeBlock(x, y, z, chunk, 1, itemblock_info.id)
+        local ok, name = RS.GameRemotes.PlaceBlock:InvokeServer(x, y, z, placeSlot, 1)
+        if not ok then
+            chunk:change(x % 16, y, z % 16, name)
+        end
+    end
+
+    function SkyBuild.start()
+        if running then return end
+        running = true
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if coordText then
+            coordConn = coordText:GetPropertyChangedSignal("Text"):Connect(onCoordChanged)
+        end
+    end
+
+    function SkyBuild.stop()
+        if not running then return end
+        running = false
+        if coordConn then
+            coordConn:Disconnect()
+            coordConn = nil
+        end
+    end
+end
+
+local SkyBuild3x3 = {}
+do
+    local running = false
+    local coordConn
+    local M_World, BlocksByName
+
+    local function loadModules()
+        if M_World and BlocksByName then return true end
+        local ok1, world = pcall(function()
+            return require(LocalPlayer.PlayerScripts.MainLocalScript.CWorld)
+        end)
+        local ok2, ids = pcall(function()
+            return require(RS.AssetsMod.IDs)
+        end)
+        if ok1 then M_World = world end
+        if ok2 and ids and ids.ByName and ids.ByName.Blocks then
+            BlocksByName = ids.ByName.Blocks
+        end
+        return M_World ~= nil and BlocksByName ~= nil
+    end
+
+    local function onCoordChanged()
+        if not running then return end
+        if not loadModules() then return end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local selected = char:FindFirstChild("SelectedSlot")
+        local placeSlot = selected and selected.Value
+        if not placeSlot then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local inv = hud and hud:FindFirstChild("Inventory")
+        local slots = inv and inv:FindFirstChild("Slots")
+        local slotGui = slots and slots:FindFirstChild("Slot" .. placeSlot)
+        if not slotGui or not slotGui.Slot.Display:FindFirstChild("SlotB") then return end
+
+        local realBlock
+        for _, v in pairs(slotGui.Slot.Display.SlotB:GetChildren()) do
+            realBlock = v.Name
+            break
+        end
+        if not realBlock then return end
+
+        local itemblock_info = BlocksByName[realBlock]
+        if not itemblock_info then return end
+
+        local df = hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        for ox = -1, 1 do
+            for oz = -1, 1 do
+                task.spawn(function()
+                    local px, py, pz = x + ox, y, z + oz
+
+                    local block, chunk = M_World.getBlock(px, py, pz)
+                    local canPlace = false
+                    if not block then
+                        canPlace = true
+                    else
+                        for _, v in pairs(block) do
+                            if v == 0 then
+                                canPlace = true
+                                break
+                            end
+                        end
+                    end
+                    if not canPlace then return end
+
+                    M_World.placeBlock(px, py, pz, chunk, 1, itemblock_info.id)
+                    local ok, name = RS.GameRemotes.PlaceBlock:InvokeServer(px, py, pz, placeSlot, 1)
+                    if not ok then
+                        chunk:change(px % 16, py, pz % 16, name)
+                    end
+                end)
+            end
+        end
+    end
+
+    function SkyBuild3x3.start()
+        if running then return end
+        running = true
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if coordText then
+            coordConn = coordText:GetPropertyChangedSignal("Text"):Connect(onCoordChanged)
+        end
+    end
+
+    function SkyBuild3x3.stop()
+        if not running then return end
+        running = false
+        if coordConn then
+            coordConn:Disconnect()
+            coordConn = nil
+        end
+    end
+end
+
+local SkyBuild6x6 = {}
+do
+    local running = false
+    local coordConn
+    local M_World, BlocksByName
+
+    local function loadModules()
+        if M_World and BlocksByName then return true end
+        local ok1, world = pcall(function()
+            return require(LocalPlayer.PlayerScripts.MainLocalScript.CWorld)
+        end)
+        local ok2, ids = pcall(function()
+            return require(RS.AssetsMod.IDs)
+        end)
+        if ok1 then M_World = world end
+        if ok2 and ids and ids.ByName and ids.ByName.Blocks then
+            BlocksByName = ids.ByName.Blocks
+        end
+        return M_World ~= nil and BlocksByName ~= nil
+    end
+
+    local function onCoordChanged()
+        if not running then return end
+        if not loadModules() then return end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local selected = char:FindFirstChild("SelectedSlot")
+        local placeSlot = selected and selected.Value
+        if not placeSlot then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local inv = hud and hud:FindFirstChild("Inventory")
+        local slots = inv and inv:FindFirstChild("Slots")
+        local slotGui = slots and slots:FindFirstChild("Slot" .. placeSlot)
+        if not slotGui or not slotGui.Slot.Display:FindFirstChild("SlotB") then return end
+
+        local realBlock
+        for _, v in pairs(slotGui.Slot.Display.SlotB:GetChildren()) do
+            realBlock = v.Name
+            break
+        end
+        if not realBlock then return end
+
+        local itemblock_info = BlocksByName[realBlock]
+        if not itemblock_info then return end
+
+        local df = hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        for ox = -3, 2 do
+            for oz = -3, 2 do
+                task.spawn(function()
+                    local px, py, pz = x + ox, y, z + oz
+
+                    local block, chunk = M_World.getBlock(px, py, pz)
+                    local canPlace = false
+                    if not block then
+                        canPlace = true
+                    else
+                        for _, v in pairs(block) do
+                            if v == 0 then
+                                canPlace = true
+                                break
+                            end
+                        end
+                    end
+                    if not canPlace then return end
+
+                    M_World.placeBlock(px, py, pz, chunk, 1, itemblock_info.id)
+                    local ok, name = RS.GameRemotes.PlaceBlock:InvokeServer(px, py, pz, placeSlot, 1)
+                    if not ok then
+                        chunk:change(px % 16, py, pz % 16, name)
+                    end
+                end)
+            end
+        end
+    end
+
+    function SkyBuild6x6.start()
+        if running then return end
+        running = true
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if coordText then
+            coordConn = coordText:GetPropertyChangedSignal("Text"):Connect(onCoordChanged)
+        end
+    end
+
+    function SkyBuild6x6.stop()
+        if not running then return end
+        running = false
+        if coordConn then
+            coordConn:Disconnect()
+            coordConn = nil
+        end
+    end
+end
+
+local BreakBedrock = {}
+do
+    local function roundN(n) return math.floor(n + 0.5) end
+
+    function BreakBedrock.start()
+        local char = LocalPlayer.Character
+        if not char or not char.PrimaryPart then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local inv = hud and hud:FindFirstChild("Inventory")
+        local slots = inv and inv:FindFirstChild("Slots")
+        local slot0 = slots and slots:FindFirstChild("Slot0")
+        local slotNode = slot0 and slot0:FindFirstChild("Slot")
+        local countLbl = slotNode and slotNode:FindFirstChild("Count")
+        if not countLbl then return end
+
+        local b = tonumber(countLbl.Text)
+        if not b or b < 1 then return end
+
+        local remotes = RS:FindFirstChild("GameRemotes")
+        local placeBlock = remotes and remotes:FindFirstChild("PlaceBlock")
+        if not placeBlock then return end
+
+        local bro = char.PrimaryPart.Position
+        local vx = roundN(bro.X / 3)
+        local vy = roundN(bro.Y / 3) - 1
+        local vz = roundN(bro.Z / 3)
+
+        pcall(function()
+            placeBlock:InvokeServer(
+                vx,
+                vy - 2,
+                vz,
+                0,
+                Vector3.new(0, 0, 1),
+                ""
+            )
+        end)
+    end
+
+    function BreakBedrock.stop() end
+end
+
+local Suicide = {}
+do
+    function Suicide.start()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function()
+                hum.Health = 0
+            end)
+        end
+    end
+
+    function Suicide.stop() end
+end
+
+local ReloadChunks = {}
+do
+    function ReloadChunks.start()
+        local ps = LocalPlayer:FindFirstChild("PlayerScripts")
+        local main = ps and ps:FindFirstChild("MainLocalScript")
+        local cworldObj = main and main:FindFirstChild("CWorld")
+        if not cworldObj then return end
+
+        local ok, CWorld = pcall(require, cworldObj)
+        if not ok or type(CWorld) ~= "table" then return end
+
+        local world = CWorld.World
+        local loadingChunks = CWorld.LoadingChunks
+        local renderingChunks = CWorld.RenderingChunks
+        local loadingReqQueue = CWorld.LoadingReqQueue
+        local processingBlocks = CWorld.ProcessingBlocks
+
+        if renderingChunks then
+            for _, yrow in pairs(renderingChunks) do
+                for _, chunk in pairs(yrow) do
+                    if chunk.BlockerPart then
+                        pcall(function() chunk.BlockerPart:Destroy() end)
+                    end
+                    if chunk.vfold then
+                        pcall(function() chunk.vfold:Destroy() end)
+                    end
+                    if chunk.vlfold then
+                        pcall(function() chunk.vlfold:Destroy() end)
+                    end
+                end
+            end
+        end
+
+        if world then table.clear(world) end
+        if loadingChunks then table.clear(loadingChunks) end
+        if renderingChunks then table.clear(renderingChunks) end
+        if loadingReqQueue then table.clear(loadingReqQueue) end
+
+        if processingBlocks and typeof(processingBlocks) == "table" then
+            if processingBlocks.clear then
+                pcall(function() processingBlocks:clear() end)
+            elseif processingBlocks.Contents then
+                table.clear(processingBlocks.Contents)
+            else
+                table.clear(processingBlocks)
+            end
+        end
+    end
+
+    function ReloadChunks.stop() end
+end
+
+local NameProtect = {}
+do
+    local running = false
+    local conns = {}
+    local savedName
+    local PROTECT_VAL = "Protected"
+
+    local function isTextLabel(v)
+        return v.ClassName == "TextLabel"
+    end
+
+    local function applyTo(label)
+        if not running then return end
+        if string.find(label.Text, savedName, 1, true) then
+            label.Text = label.Text:gsub(savedName, PROTECT_VAL)
+        end
+    end
+
+    local function hookLabel(label)
+        applyTo(label)
+        table.insert(conns, label:GetPropertyChangedSignal("Text"):Connect(function()
+            applyTo(label)
+        end))
+    end
+
+    function NameProtect.start()
+        if running then return end
+        running = true
+        savedName = LocalPlayer.Name
+        getgenv().name = PROTECT_VAL
+
+        for _, v in next, game:GetDescendants() do
+            if isTextLabel(v) then
+                hookLabel(v)
+            end
+        end
+
+        table.insert(conns, game.DescendantAdded:Connect(function(v)
+            if running and isTextLabel(v) then
+                hookLabel(v)
+            end
+        end))
+    end
+
+    function NameProtect.stop()
+        if not running then return end
+        running = false
+
+        for _, c in ipairs(conns) do
+            pcall(function() c:Disconnect() end)
+        end
+        table.clear(conns)
+    end
+end
+
+local AirWalk = {}
+do
+    local running = false
+    local platform
+    local loopThread
+
+    local function makePlatform()
+        local p = Instance.new("Part")
+        p.Anchored = true
+        p.Size = Vector3.new(5, 1, 5)
+        p.Transparency = 1
+        p.CanCollide = true
+        p.Parent = Workspace
+        return p
+    end
+
+    local function loop()
+        local platformY
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            platformY = hrp.Position.Y - 3
+        end
+
+        while running do
+            local c = LocalPlayer.Character
+            local h = c and c:FindFirstChild("HumanoidRootPart")
+            if h and platform then
+                if not platformY then
+                    platformY = h.Position.Y - 3
+                end
+                platform.Position = Vector3.new(h.Position.X, platformY, h.Position.Z)
+            end
+            task.wait()
+        end
+    end
+
+    function AirWalk.start()
+        if running then return end
+        running = true
+
+        platform = makePlatform()
+
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            platform.Position = Vector3.new(hrp.Position.X, hrp.Position.Y - 3, hrp.Position.Z)
+        end
+
+        loopThread = task.spawn(loop)
+    end
+
+    function AirWalk.stop()
+        if not running then return end
+        running = false
+
+        if platform then
+            platform:Destroy()
+            platform = nil
+        end
+    end
+end
+
+local InfJump = {}
+do
+    local running = false
+    local conn
+
+    function InfJump.start()
+        if running then return end
+        running = true
+
+        conn = UserInput.JumpRequest:Connect(function()
+            if not running then return end
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end)
+    end
+
+    function InfJump.stop()
+        if not running then return end
+        running = false
+
+        if conn then
+            conn:Disconnect()
+            conn = nil
+        end
+    end
+end
+
+local WallBuilderX = {}
+do
+    local running = false
+    local coordConn
+    local M_World, BlocksByName
+
+    local function loadModules()
+        if M_World and BlocksByName then return true end
+        local ok1, world = pcall(function()
+            return require(LocalPlayer.PlayerScripts.MainLocalScript.CWorld)
+        end)
+        local ok2, ids = pcall(function()
+            return require(RS.AssetsMod.IDs)
+        end)
+        if ok1 then M_World = world end
+        if ok2 and ids and ids.ByName and ids.ByName.Blocks then
+            BlocksByName = ids.ByName.Blocks
+        end
+        return M_World ~= nil and BlocksByName ~= nil
+    end
+
+    local function onCoordChanged()
+        if not running then return end
+        if not loadModules() then return end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local selected = char:FindFirstChild("SelectedSlot")
+        local placeSlot = selected and selected.Value
+        if not placeSlot then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local inv = hud and hud:FindFirstChild("Inventory")
+        local slots = inv and inv:FindFirstChild("Slots")
+        local slotGui = slots and slots:FindFirstChild("Slot" .. placeSlot)
+        if not slotGui or not slotGui.Slot.Display:FindFirstChild("SlotB") then return end
+
+        local realBlock
+        for _, v in pairs(slotGui.Slot.Display.SlotB:GetChildren()) do
+            realBlock = v.Name
+            break
+        end
+        if not realBlock then return end
+
+        local itemblock_info = BlocksByName[realBlock]
+        if not itemblock_info then return end
+
+        local df = hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        for ox = -2, 2 do
+            task.spawn(function()
+                local px, py, pz = x + ox, y, z
+
+                local block, chunk = M_World.getBlock(px, py, pz)
+                local canPlace = false
+                if not block then
+                    canPlace = true
+                else
+                    for _, v in pairs(block) do
+                        if v == 0 then
+                            canPlace = true
+                            break
+                        end
+                    end
+                end
+                if not canPlace then return end
+
+                M_World.placeBlock(px, py, pz, chunk, 1, itemblock_info.id)
+                local ok, name = RS.GameRemotes.PlaceBlock:InvokeServer(px, py, pz, placeSlot, 1)
+                if not ok then
+                    chunk:change(px % 16, py, pz % 16, name)
+                end
+            end)
+        end
+    end
+
+    function WallBuilderX.start()
+        if running then return end
+        running = true
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if coordText then
+            coordConn = coordText:GetPropertyChangedSignal("Text"):Connect(onCoordChanged)
+        end
+    end
+
+    function WallBuilderX.stop()
+        if not running then return end
+        running = false
+        if coordConn then
+            coordConn:Disconnect()
+            coordConn = nil
+        end
+    end
+end
+
+local WallBuilderY = {}
+do
+    local running = false
+    local coordConn
+    local M_World, BlocksByName
+
+    local function loadModules()
+        if M_World and BlocksByName then return true end
+        local ok1, world = pcall(function()
+            return require(LocalPlayer.PlayerScripts.MainLocalScript.CWorld)
+        end)
+        local ok2, ids = pcall(function()
+            return require(RS.AssetsMod.IDs)
+        end)
+        if ok1 then M_World = world end
+        if ok2 and ids and ids.ByName and ids.ByName.Blocks then
+            BlocksByName = ids.ByName.Blocks
+        end
+        return M_World ~= nil and BlocksByName ~= nil
+    end
+
+    local function onCoordChanged()
+        if not running then return end
+        if not loadModules() then return end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local selected = char:FindFirstChild("SelectedSlot")
+        local placeSlot = selected and selected.Value
+        if not placeSlot then return end
+
+        local hud = pg:FindFirstChild("HUDGui")
+        local inv = hud and hud:FindFirstChild("Inventory")
+        local slots = inv and inv:FindFirstChild("Slots")
+        local slotGui = slots and slots:FindFirstChild("Slot" .. placeSlot)
+        if not slotGui or not slotGui.Slot.Display:FindFirstChild("SlotB") then return end
+
+        local realBlock
+        for _, v in pairs(slotGui.Slot.Display.SlotB:GetChildren()) do
+            realBlock = v.Name
+            break
+        end
+        if not realBlock then return end
+
+        local itemblock_info = BlocksByName[realBlock]
+        if not itemblock_info then return end
+
+        local df = hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if not coordText then return end
+
+        local x, y, z = coordText.Text:match("(%-?%d+),%s*(%-?%d+),%s*(%-?%d+)")
+        if not x then return end
+
+        x = tonumber(x)
+        y = tonumber(y) - 1
+        z = tonumber(z)
+
+        for oz = -2, 2 do
+            task.spawn(function()
+                local px, py, pz = x, y, z + oz
+
+                local block, chunk = M_World.getBlock(px, py, pz)
+                local canPlace = false
+                if not block then
+                    canPlace = true
+                else
+                    for _, v in pairs(block) do
+                        if v == 0 then
+                            canPlace = true
+                            break
+                        end
+                    end
+                end
+                if not canPlace then return end
+
+                M_World.placeBlock(px, py, pz, chunk, 1, itemblock_info.id)
+                local ok, name = RS.GameRemotes.PlaceBlock:InvokeServer(px, py, pz, placeSlot, 1)
+                if not ok then
+                    chunk:change(px % 16, py, pz % 16, name)
+                end
+            end)
+        end
+    end
+
+    function WallBuilderY.start()
+        if running then return end
+        running = true
+        local hud = pg:FindFirstChild("HUDGui")
+        local df = hud and hud:FindFirstChild("DataFrame")
+        local coordText = df and df:FindFirstChild("Coord")
+        if coordText then
+            coordConn = coordText:GetPropertyChangedSignal("Text"):Connect(onCoordChanged)
+        end
+    end
+
+    function WallBuilderY.stop()
+        if not running then return end
+        running = false
+        if coordConn then
+            coordConn:Disconnect()
+            coordConn = nil
+        end
+    end
+end
+
+local InventoryViewer = {}
+do
+    local running = false
+    local MIV = {}
+    local SOT
+    local slotChangeEvents = {}
+    local M_ItemInfo
+
+    local function disconnectAll()
+        for _, event in pairs(slotChangeEvents) do
+            pcall(function() event:Disconnect() end)
+        end
+        table.clear(slotChangeEvents)
+    end
+
+    local function getBlockModel(name)
+        local rf = game:GetService("ReplicatedFirst")
+        local blocks = rf:FindFirstChild("Blocks")
+        local metaBlocks = rf:FindFirstChild("MetaBlocks")
+        if not blocks then return nil end
+        local block = blocks:WaitForChild(name, 3)
+        block = block and block:Clone()
+        local metablock = metaBlocks and metaBlocks:FindFirstChild(name)
+        if block and metablock and metablock:IsA("Instance") then
+            for _, v in pairs(metablock:GetChildren()) do
+                local c = v:Clone()
+                c.Parent = block
+            end
+        end
+        return block
+    end
+
+    local function userFromBox(str)
+        for _, v in pairs(Players:GetPlayers()) do
+            if string.sub(string.lower(v.Name), 1, string.len(str)) == string.lower(str) then
+                return v
+            end
+        end
+    end
+
+    local function getDataSlot(chr, slot)
+        if chr and chr:FindFirstChild("Inventory", 5) then
+            local slotObj = chr.Inventory:WaitForChild("Slot"..slot, 5)
+            if not slotObj then return false end
+            local slotStr = slotObj.Value
+            local removed = string.gsub(slotStr, '[%{%}%"]', "")
+            local parts = string.split(removed, ",")
+            local name, count, durab
+            for _, data in pairs(parts) do
+                if data:match("name:") then
+                    name = string.sub(data, 6)
+                end
+                if data:match("count:") then
+                    count = string.sub(data, 7)
+                end
+                if data:match("durability:") then
+                    durab = string.sub(data, 12)
+                end
+            end
+            return name, count, durab
+        else
+            return false
+        end
+    end
+
+    local function createSlot(slotvalue, type, content)
+        if type == "Real" then
+            local IS = Instance.new("Frame", MIV.IBrgI)
+            IS.ZIndex = 105
+            IS.BorderSizePixel = 0
+            IS.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            IS.Size = UDim2.new(0.10123, 0, 0.18304, 0)
+            IS.BorderColor3 = Color3.fromRGB(0, 0, 0)
+            IS.Name = "Slot"..slotvalue
+            local ISUG = Instance.new("UIGradient", IS)
+            ISUG.Rotation = -90
+            ISUG.Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0.000, Color3.fromRGB(181, 181, 181)),
+                ColorSequenceKeypoint.new(0.500, Color3.fromRGB(191, 191, 191)),
+                ColorSequenceKeypoint.new(1.000, Color3.fromRGB(216, 216, 216))
+            }
+            local ISUC = Instance.new("UICorner", IS)
+            ISUC.CornerRadius = UDim.new(0, 5)
+
+            local ISI = Instance.new("ImageLabel", IS)
+            ISI.ZIndex = 106
+            ISI.BorderSizePixel = 0
+            ISI.ScaleType = Enum.ScaleType.Crop
+            ISI.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            ISI.AnchorPoint = Vector2.new(0.5, 0.5)
+            ISI.Image = "rbxassetid://18662155"
+            ISI.Size = UDim2.new(0.85366, 0, 0.85366, 0)
+            ISI.BorderColor3 = Color3.fromRGB(0, 0, 0)
+            ISI.BackgroundTransparency = 1
+            ISI.Name = "item"
+            ISI.Position = UDim2.new(0.5, 0, 0.5, 0)
+            ISI.ResampleMode = Enum.ResamplerMode.Pixelated
+            if content then
+                local defaultImage = Instance.new("StringValue", ISI)
+                defaultImage.Name = "defaultContent"
+                defaultImage.Value = content
+                ISI.Image = "rbxassetid://"..content
+            end
+            local oldBlock = Instance.new("StringValue", ISI)
+            oldBlock.Name = "oldBlock"
+            oldBlock.Value = "NONE"
+
+            local ISC = Instance.new("TextLabel", IS)
+            ISC.ZIndex = 106
+            ISC.TextWrapped = true
+            ISC.SizeConstraint = Enum.SizeConstraint.RelativeXX
+            ISC.BorderSizePixel = 0
+            ISC.TextSize = 14
+            ISC.TextXAlignment = Enum.TextXAlignment.Right
+            ISC.TextScaled = true
+            ISC.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            ISC.FontFace = Font.new("rbxasset://fonts/families/Ubuntu.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+            ISC.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ISC.BackgroundTransparency = 1
+            ISC.Size = UDim2.new(0.97561, 0, 0.4878, 0)
+            ISC.BorderColor3 = Color3.fromRGB(0, 0, 0)
+            ISC.Text = "N"
+            ISC.Name = "count"
+            ISC.Position = UDim2.new(0, 0, 0.5, 0)
+            ISC.Visible = false
+
+            local ISD = Instance.new("TextLabel", IS)
+            ISD.ZIndex = 106
+            ISD.TextWrapped = true
+            ISD.SizeConstraint = Enum.SizeConstraint.RelativeXX
+            ISD.BorderSizePixel = 0
+            ISD.TextSize = 14
+            ISD.TextXAlignment = Enum.TextXAlignment.Right
+            ISD.TextScaled = true
+            ISD.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            ISD.FontFace = Font.new("rbxasset://fonts/families/Ubuntu.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+            ISD.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ISD.BackgroundTransparency = 1
+            ISD.Size = UDim2.new(0.97561, 0, 0.29268, 0)
+            ISD.BorderColor3 = Color3.fromRGB(0, 0, 0)
+            ISD.Text = "N"
+            ISD.Name = "dur"
+            ISD.Visible = false
+        elseif type == "Fake" then
+            local ISF = Instance.new("Frame", MIV.IBrgI)
+            ISF.ZIndex = 106
+            ISF.BorderSizePixel = 0
+            ISF.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            ISF.Size = UDim2.new(0.10123, 0, 0.18304, 0)
+            ISF.BorderColor3 = Color3.fromRGB(0, 0, 0)
+            ISF.Name = "skipframe"
+            ISF.BackgroundTransparency = 1
+        end
+    end
+
+    local function slotDataAction(command, chr, slot, nameD, countD, durD)
+        if not MIV.SG or MIV.SG.Parent == nil then return end
+        if command == "ClearAll" then
+            SOT.Parent = MIV.SG
+            SOT.Enabled = false
+            for _, slots in pairs(MIV.IBrgI:GetDescendants()) do
+                if slots:IsA("Frame") and slots:FindFirstChild("item") then
+                    slots.item.ImageRectOffset = Vector2.new(0, 0)
+                    slots.item.ImageRectSize = Vector2.new(0, 0)
+                    if slots.item:FindFirstChild("defaultContent") then
+                        slots.item.Image = "rbxassetid://"..slots.item.defaultContent.Value
+                    else
+                        slots.item.Image = "rbxassetid://18662155"
+                    end
+                    if slots.item:FindFirstChild("SlotB") then
+                        slots.item.oldBlock.Value = "NONE"
+                        slots.item.SlotB:Destroy()
+                    end
+                    slots.count.Visible = false
+                    slots.dur.Visible = false
+                end
+            end
+        elseif command == "ClearSlot" then
+            local forslot = MIV.IBrgI["Slot"..slot]
+            if not forslot then return end
+            forslot.item.ImageRectOffset = Vector2.new(0, 0)
+            forslot.item.ImageRectSize = Vector2.new(0, 0)
+            if forslot.item:FindFirstChild("defaultContent") then
+                forslot.item.Image = "rbxassetid://"..forslot.item.defaultContent.Value
+            else
+                forslot.item.Image = "rbxassetid://18662155"
+            end
+            forslot.count.Visible = false
+            forslot.dur.Visible = false
+            if forslot.item:FindFirstChild("SlotB") then
+                forslot.item.oldBlock.Value = "NONE"
+                forslot.item.SlotB:Destroy()
+            end
+        elseif command == "UpdateSlot" then
+            if chr and chr:FindFirstChild("Inventory") then
+                local forslot = MIV.IBrgI["Slot"..slot]
+                if not forslot then return end
+                if tonumber(countD) and tonumber(countD) > 1 then
+                    forslot.count.Text = tostring(math.round(tonumber(countD)))
+                    forslot.count.Visible = true
+                else
+                    forslot.count.Visible = false
+                end
+                if tonumber(durD) == nil or tonumber(durD) < 1 then
+                    forslot.dur.Visible = false
+                else
+                    forslot.dur.Text = durD
+                    forslot.dur.Visible = true
+                end
+                local theitem = M_ItemInfo[nameD]
+                if theitem then
+                    if theitem.block then
+                        forslot.item.Image = "rbxassetid://18662155"
+                        if not forslot.item:FindFirstChild("SlotB") then
+                            local display = LocalPlayer.PlayerScripts.MainLocalScript.SlotB:Clone()
+                            display.Size = UDim2.new(1, 0, 1, 0)
+                            display.ZIndex = 0
+                            display.Parent = forslot.item
+                        end
+                        if forslot.item.oldBlock.Value == nil or forslot.item.oldBlock.Value ~= theitem.block then
+                            forslot.item.oldBlock.Value = theitem.block
+                            local block = getBlockModel(theitem.block)
+                            if block ~= nil then
+                                block.CFrame = CFrame.new() * CFrame.Angles(0, math.pi, 0)
+                                block.Parent = forslot.item.SlotB
+                            else
+                                forslot.item.Image = "rbxassetid://12905962676"
+                            end
+                        end
+                    else
+                        forslot.item.oldBlock.Value = "NONE"
+                        if forslot.item:FindFirstChild("SlotB") then
+                            forslot.item.SlotB:Destroy()
+                        end
+                        local textured = LocalPlayer.PlayerScripts.MainLocalScript.ItemTextures:FindFirstChild(theitem.texture)
+                        if textured then
+                            local imageSuccess = false
+                            if textured:IsA("ImageLabel") then
+                                forslot.item.Image = textured.Image
+                                imageSuccess = true
+                            else
+                                for _, v in pairs(textured:GetDescendants()) do
+                                    if v:IsA("ImageLabel") then
+                                        forslot.item.Image = v.Image
+                                        if v.Parent:IsA("Frame") and v.Parent.Name == "Warper" then
+                                            forslot.item.ImageRectOffset = Vector2.new(-180, -5)
+                                            forslot.item.ImageRectSize = Vector2.new(495, 365)
+                                        end
+                                        imageSuccess = true
+                                        break
+                                    end
+                                end
+                            end
+                            if imageSuccess == false then
+                                forslot.item.Image = "rbxassetid://12905962676"
+                            end
+                        else
+                            forslot.item.Image = "rbxassetid://12905962676"
+                        end
+                    end
+                else
+                    forslot.item.Image = "rbxassetid://12905962676"
+                end
+            end
+        end
+    end
+
+    local function buildGui()
+        if not RS:FindFirstChild("AssetsMod") then return false end
+        if not RS.AssetsMod:FindFirstChild("ItemInfo") then return false end
+        local ok, res = pcall(require, RS.AssetsMod.ItemInfo)
+        if not ok then return false end
+        M_ItemInfo = res
+
+        MIV = {}
+
+        MIV.SG = Instance.new("ScreenGui", pg)
+        MIV.SG.Name = "invviewer"
+        MIV.SG.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        MIV.SG.ResetOnSpawn = false
+        MIV.SG.DisplayOrder = 999999
+
+        MIV.BHI = Instance.new("Frame", MIV.SG)
+        MIV.BHI.ZIndex = 100
+        MIV.BHI.BorderSizePixel = 0
+        MIV.BHI.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.BHI.Size = UDim2.new(0.18717, 0, 0.02538, 0)
+        MIV.BHI.Position = UDim2.new(0.03966, 0, 0.64975, 0)
+        MIV.BHI.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.BHI.Name = "projectastra"
+        MIV.BHI.BackgroundTransparency = 1
+
+        local BHIUARC = Instance.new("UIAspectRatioConstraint", MIV.BHI)
+        BHIUARC.AspectRatio = 14
+
+        MIV.MTn = Instance.new("TextLabel", MIV.BHI)
+        MIV.MTn.TextWrapped = true
+        MIV.MTn.ZIndex = 103
+        MIV.MTn.BorderSizePixel = 0
+        MIV.MTn.TextSize = 14
+        MIV.MTn.TextScaled = true
+        MIV.MTn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        MIV.MTn.FontFace = Font.new("rbxasset://fonts/families/Zekton.json", Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+        MIV.MTn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        MIV.MTn.BackgroundTransparency = 1
+        MIV.MTn.AnchorPoint = Vector2.new(0.5, 0.5)
+        MIV.MTn.Size = UDim2.new(1, 0, 1, 0)
+        MIV.MTn.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.MTn.Text = "Project Astra"
+        MIV.MTn.Name = "naem"
+        MIV.MTn.Position = UDim2.new(0.5, 0, 0.5, 0)
+
+        MIV.CB = Instance.new("TextButton", MIV.BHI)
+        MIV.CB.ZIndex = 104
+        MIV.CB.TextWrapped = true
+        MIV.CB.BorderSizePixel = 0
+        MIV.CB.TextSize = 14
+        MIV.CB.TextScaled = true
+        MIV.CB.TextColor3 = Color3.fromRGB(255, 255, 255)
+        MIV.CB.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        MIV.CB.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+        MIV.CB.AnchorPoint = Vector2.new(0.5, 0.5)
+        MIV.CB.BackgroundTransparency = 1
+        MIV.CB.Size = UDim2.new(0.07143, 0, 1, 0)
+        MIV.CB.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.CB.Text = "-"
+        MIV.CB.Name = "closebut"
+        MIV.CB.Position = UDim2.new(0.96, 0, 0.5, 0)
+
+        MIV.BHIs = Instance.new("Frame", MIV.BHI)
+        MIV.BHIs.ZIndex = 101
+        MIV.BHIs.BorderSizePixel = 0
+        MIV.BHIs.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.BHIs.Size = UDim2.new(1, 0, 10, 0)
+        MIV.BHIs.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.BHIs.Name = "scripted"
+        MIV.BHIs.BackgroundTransparency = 0
+
+        MIV.PN = Instance.new("TextBox", MIV.BHIs)
+        MIV.PN.ZIndex = 102
+        MIV.PN.Name = "plrname"
+        MIV.PN.BorderSizePixel = 0
+        MIV.PN.TextWrapped = true
+        MIV.PN.TextSize = 14
+        MIV.PN.TextColor3 = Color3.fromRGB(255, 255, 255)
+        MIV.PN.TextScaled = true
+        MIV.PN.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.PN.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+        MIV.PN.AnchorPoint = Vector2.new(0.5, 0.5)
+        MIV.PN.PlaceholderText = "Player Here"
+        MIV.PN.Size = UDim2.new(0.84524, 0, 0.08333, 0)
+        MIV.PN.Position = UDim2.new(0.46, 0, 0.165, 0)
+        MIV.PN.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.PN.Text = ""
+        MIV.PN.BackgroundTransparency = 0.5
+
+        MIV.PNs = Instance.new("ImageButton", MIV.PN)
+        MIV.PNs.ZIndex = 104
+        MIV.PNs.BorderSizePixel = 0
+        MIV.PNs.BackgroundTransparency = 0.5
+        MIV.PNs.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.PNs.Image = "rbxassetid://2804603863"
+        MIV.PNs.Size = UDim2.new(0.07042, 0, 1, 0)
+        MIV.PNs.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.PNs.Name = "search"
+        MIV.PNs.Position = UDim2.new(1.035, 0, 0, 0)
+
+        MIV.IBrg = Instance.new("Frame", MIV.BHIs)
+        MIV.IBrg.ZIndex = 103
+        MIV.IBrg.BorderSizePixel = 0
+        MIV.IBrg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.IBrg.Size = UDim2.new(1, 0, 0.77667, 0)
+        MIV.IBrg.Position = UDim2.new(0, 0, 0.223, 0)
+        MIV.IBrg.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.IBrg.Name = "invbrg"
+        MIV.IBrg.BackgroundTransparency = 0
+        Instance.new("UICorner", MIV.IBrg)
+
+        MIV.IBrgI = Instance.new("Frame", MIV.IBrg)
+        MIV.IBrgI.ZIndex = 104
+        MIV.IBrgI.BorderSizePixel = 0
+        MIV.IBrgI.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        MIV.IBrgI.AnchorPoint = Vector2.new(0.5, 0.5)
+        MIV.IBrgI.Size = UDim2.new(0.96429, 0, 0.96137, 0)
+        MIV.IBrgI.Position = UDim2.new(0.5, 0, 0.5, 0)
+        MIV.IBrgI.BorderColor3 = Color3.fromRGB(0, 0, 0)
+        MIV.IBrgI.Name = "inventory"
+        MIV.IBrgI.BackgroundTransparency = 1
+
+        local UGL = Instance.new("UIGridLayout", MIV.IBrgI)
+        UGL.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        UGL.CellSize = UDim2.new(0.101, 0, 0.183, 0)
+        UGL.FillDirectionMaxCells = 9
+        UGL.VerticalAlignment = Enum.VerticalAlignment.Center
+        UGL.SortOrder = Enum.SortOrder.LayoutOrder
+        UGL.CellPadding = UDim2.new(0.008, 0, 0.015, 0)
+
+        SOT = Instance.new("UIStroke", MIV.SG)
+        SOT.Name = "SlotOutline"
+        SOT.Enabled = false
+        SOT.Thickness = 2
+        SOT.LineJoinMode = Enum.LineJoinMode.Bevel
+        SOT.Color = Color3.fromRGB(0, 180, 0)
+
+        for i = 9, 35 do createSlot(i, "Real") end
+        for i = 103, 100, -1 do
+            if i == 103 then createSlot(i, "Real", "120766242844257")
+            elseif i == 102 then createSlot(i, "Real", "122066288812545")
+            elseif i == 101 then createSlot(i, "Real", "127851120592221")
+            else createSlot(i, "Real", "73135807296989") end
+        end
+        for i = 1, 4 do createSlot(i, "Fake") end
+        createSlot(-1, "Real", "94017498041531")
+        for i = 0, 8 do createSlot(i, "Real") end
+
+        return true
+    end
+
+    local function hookGui()
+        MIV.CB.MouseButton1Click:Connect(function()
+            if MIV.CB.Text == "-" then
+                MIV.BHIs.Visible = false
+                MIV.CB.Text = "+"
+            elseif MIV.CB.Text == "+" then
+                MIV.BHIs.Visible = true
+                MIV.CB.Text = "-"
+            end
+        end)
+
+        MIV.PNs.MouseButton1Click:Connect(function()
+            local found = userFromBox(MIV.PN.Text)
+            if found ~= nil then
+                local player = Players:FindFirstChild(tostring(found))
+                if player ~= nil and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character:FindFirstChild("Humanoid").Health > 0 then
+                    MIV.PN.PlaceholderText = "Loaded Inventory: "..player.Name
+                    MIV.PN.Text = ""
+                    local chr = player.Character
+                    disconnectAll()
+                    slotDataAction("ClearAll")
+                    for i = -1, 35 do
+                        local name, count, durab = getDataSlot(chr, i)
+                        if name ~= nil and count ~= nil and tonumber(count) > 0 then
+                            slotDataAction("UpdateSlot", chr, i, name, count, durab)
+                        end
+                        local slotObj = chr.Inventory:FindFirstChild("Slot"..i)
+                        if slotObj then
+                            table.insert(slotChangeEvents, slotObj:GetPropertyChangedSignal("Value"):Connect(function()
+                                local n, c, d = getDataSlot(chr, i)
+                                if n ~= nil and c ~= nil and tonumber(c) > 0 then
+                                    slotDataAction("UpdateSlot", chr, i, n, c, d)
+                                else
+                                    slotDataAction("ClearSlot", nil, i)
+                                end
+                            end))
+                        end
+                    end
+                    for i = 100, 103 do
+                        local name, count, durab = getDataSlot(chr, i)
+                        if name ~= nil and count ~= nil and tonumber(count) > 0 then
+                            slotDataAction("UpdateSlot", chr, i, name, count, durab)
+                        end
+                        local slotObj = chr.Inventory:FindFirstChild("Slot"..i)
+                        if slotObj then
+                            table.insert(slotChangeEvents, slotObj:GetPropertyChangedSignal("Value"):Connect(function()
+                                local n, c, d = getDataSlot(chr, i)
+                                if n ~= nil and c ~= nil and tonumber(c) > 0 then
+                                    slotDataAction("UpdateSlot", chr, i, n, c, d)
+                                else
+                                    slotDataAction("ClearSlot", nil, i)
+                                end
+                            end))
+                        end
+                    end
+                    if chr:FindFirstChild("SelectedSlot") and MIV.IBrgI:FindFirstChild("Slot"..chr.SelectedSlot.Value) then
+                        SOT.Parent = MIV.IBrgI:FindFirstChild("Slot"..chr.SelectedSlot.Value)
+                        SOT.Enabled = true
+                        table.insert(slotChangeEvents, chr.SelectedSlot:GetPropertyChangedSignal("Value"):Connect(function()
+                            local result = chr.SelectedSlot.Value
+                            if MIV.IBrgI:FindFirstChild("Slot"..result) then
+                                SOT.Parent = MIV.IBrgI:FindFirstChild("Slot"..result)
+                                SOT.Enabled = true
+                            end
+                        end))
+                    end
+                    table.insert(slotChangeEvents, Players.PlayerRemoving:Connect(function(plr)
+                        if plr == player then
+                            MIV.PN.Text = ""
+                            MIV.PN.PlaceholderText = "Player Disconnected: "..plr.Name
+                            disconnectAll()
+                            slotDataAction("ClearAll")
+                        end
+                    end))
+                    if chr:FindFirstChild("Humanoid") then
+                        table.insert(slotChangeEvents, chr.Humanoid.Died:Connect(function()
+                            MIV.PN.Text = ""
+                            MIV.PN.PlaceholderText = "Player Died: "..player.Name
+                            disconnectAll()
+                            slotDataAction("ClearAll")
+                        end))
+                    end
+                end
+            else
+                disconnectAll()
+                slotDataAction("ClearAll")
+                MIV.PNs.Interactable = false
+                MIV.PN.Interactable = false
+                MIV.PN.PlaceholderText = "Not Found"
+                MIV.PN.PlaceholderColor3 = Color3.fromRGB(255, 0, 0)
+                MIV.PN.Text = ""
+                task.delay(1, function()
+                    if MIV.PNs then MIV.PNs.Interactable = true end
+                    if MIV.PN then
+                        MIV.PN.Interactable = true
+                        MIV.PN.PlaceholderText = "Player Here"
+                        MIV.PN.PlaceholderColor3 = Color3.fromRGB(178, 178, 178)
+                    end
+                end)
+            end
+        end)
+
+        local dragging = false
+        local dragInput, dragStart, startPos
+        local function update(input)
+            local delta = input.Position - dragStart
+            MIV.BHI.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+        MIV.BHI.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                dragStart = input.Position
+                startPos = MIV.BHI.Position
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                    end
+                end)
+            end
+        end)
+        MIV.BHI.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+        UserInput.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
+                update(input)
+            end
+        end)
+    end
+
+    function InventoryViewer.start()
+        if running then return end
+        running = true
+
+        local ok = buildGui()
+        if not ok then
+            running = false
+            return
+        end
+
+        hookGui()
+    end
+
+    function InventoryViewer.stop()
+        if not running then return end
+        running = false
+
+        disconnectAll()
+
+        if MIV.SG then
+            MIV.SG:Destroy()
+        end
+        MIV = {}
+        SOT = nil
+    end
+end
+
+local HANDLERS = {
+    ["Kill Aura"]                 = KillAura,
+    ["Target Strafe"]             = TargetStrafe,
+    ["Triggerbot"]                = Triggerbot,
+    ["HitBox Expander"]           = Hitbox,
+    ["Auto Combat Log"]           = CombatLog,
+    ["Auto Safe Zone"]            = AutoSafeZone,
+    ["No Fall"]                   = NoFall,
+    ["Jesus"]                     = Jesus,
+    ["Auto Armor"]                = AutoArmor,
+    ["Auto Drop Selected Item"]   = AutoDrop,
+    ["Auto Eat"]                  = AutoEat,
+    ["Auto Tool"]                 = AutoTool,
+    ["Fast Break"]                = FastBreak,
+    ["Freeze"]                    = Freeze,
+    ["Chest Stealer/Dumper"]      = ChestDumper,
+    ["Dump + Dupe Entire Chest"]  = DumpDupe,
+    ["Auto Dupe Entire Chest"]    = AutoDupeChest,
+    ["Dupe Entire Chest"]         = DupeEntireChest,
+    ["Dupe First Chest Slot"]     = DupeFirstSlot,
+    ["Dupe Selected item"]        = DupeSelected,
+    ["Get Infinity Items"]        = GetInfinityItems,
+    ["Get Lava"]                  = GetLava,
+    ["Immortality"]               = Immortality,
+    ["Infinity Health"]           = InfinityHealth,
+    ["Creative"]                  = Creative,
+    ["More Slots"]                = MoreSlots,
+    ["Nuker"]                     = Nuker,
+    ["Nuker 3x3"]                 = Nuker3x3,
+    ["Nuker 6x6"]                 = Nuker6x6,
+    ["Sky Build"]                 = SkyBuild,
+    ["Sky Build 3x3"]             = SkyBuild3x3,
+    ["Sky Build 6x6"]             = SkyBuild6x6,
+    ["Break Bedrock"]             = BreakBedrock,
+    ["Suicide"]                   = Suicide,
+    ["Reload Chunks"]             = ReloadChunks,
+    ["Name Protect"]              = NameProtect,
+    ["Air Walk"]                  = AirWalk,
+    ["Infinity Jump/Air Jump"]    = InfJump,
+    ["Wall Builder X"]            = WallBuilderX,
+    ["Wall Builder Y"]            = WallBuilderY,
+    ["Inventory Viewer"]          = InventoryViewer,
+}
+
+local CATEGORIES = {
+    { title = "Combat!", items = {
+        { name = "Kill Aura" },
+        { name = "Target Strafe" },
+        { name = "Triggerbot" },
+        { name = "HitBox Expander" },
+        { name = "Auto Combat Log" },
+        { name = "Auto Safe Zone" },
+    }},
+    { title = "Visuals", items = {} },
+    { title = "Misc", items = {
+        { name = "Suicide",                  pulse = true },
+        { name = "No Fall" },
+        { name = "Jesus" },
+        { name = "Infinity Health" },
+        { name = "Immortality",              pulse = true },
+        { name = "Auto Armor" },
+        { name = "Auto Tool" },
+        { name = "Auto Eat" },
+        { name = "Freeze" },
+        { name = "Reload Chunks",            pulse = true },
+        { name = "Chest Stealer/Dumper",      pulse = true },
+        { name = "Get Lava",                 pulse = true },
+        { name = "Break Bedrock",            pulse = true },
+        { name = "Creative" },
+        { name = "Fast Break" },
+        { name = "Auto Drop Selected Item" },
+        { name = "Nuker" },
+        { name = "Nuker 3x3",                pulse = true },
+        { name = "Nuker 6x6",                pulse = true },
+        { name = "Sky Build" },
+        { name = "Sky Build 3x3" },
+        { name = "Sky Build 6x6" },
+        { name = "Scaffold" },
+        { name = "Scaffold 3x" },
+        { name = "Wall Builder X" },
+        { name = "Wall Builder Y" },
+        { name = "Dupe Selected item",       pulse = true },
+        { name = "Dupe First Chest Slot",    pulse = true },
+        { name = "Dupe Entire Chest",        pulse = true },
+        { name = "Dump + Dupe Entire Chest", pulse = true },
+        { name = "Get Infinity Items",       pulse = true },
+        { name = "Auto Dupe Entire Chest" },
+        { name = "Name Protect" },
+        { name = "More Slots" },
+        { name = "Inventory Viewer" },
+    }},
+    { title = "Player", items = {
+        { name = "Infinity Jump/Air Jump" },
+        { name = "WalkSpeed" },
+        { name = "JumpPower" },
+        { name = "Air Walk" },
+    }},
+}
+
+local function blankHeaders()
+    local h = {}
+    for i = 1, #CATEGORIES do
+        h[i] = C.header
+    end
+    return h
+end
+
+local function shallowCopy(t)
+    local out = {}
+    for k, v in pairs(t) do
+        out[k] = v
+    end
+    return out
+end
+
+local state = {
+    transparency = 0,
+    color        = Color3.fromRGB(0, 0, 0),
+    gradient     = true,
+    autosave     = false,
+    headers      = blankHeaders(),
+    featureColor = C.accent,
+}
+
+local draft = shallowCopy(state)
+draft.headers = shallowCopy(state.headers)
+
+local CONFIG = "ProjectAstra_config.json"
+local canIO = typeof(writefile) == "function"
+    and typeof(readfile) == "function"
+    and typeof(isfile) == "function"
+
+local function packColor(c)
+    return { c.R, c.G, c.B }
+end
+
+local function unpackColor(t, fallback)
+    if type(t) == "table" and #t == 3 then
+        return Color3.new(t[1], t[2], t[3])
+    end
+    return fallback
+end
+
+local function saveConfig()
+    if not canIO then return end
+    local headers = {}
+    for i, c in ipairs(state.headers) do
+        headers[i] = packColor(c)
+    end
+    local payload = {
+        transparency = state.transparency,
+        color        = packColor(state.color),
+        gradient     = state.gradient,
+        autosave     = state.autosave,
+        headers      = headers,
+        feature      = packColor(state.featureColor),
+    }
+    pcall(function()
+        writefile(CONFIG, Http:JSONEncode(payload))
+    end)
+end
+
+local function loadConfig()
+    if not canIO or not isfile(CONFIG) then return end
+    local ok, data = pcall(function()
+        return Http:JSONDecode(readfile(CONFIG))
+    end)
+    if not ok or type(data) ~= "table" or not data.autosave then return end
+    state.autosave     = true
+    state.transparency = tonumber(data.transparency) or state.transparency
+    state.color        = unpackColor(data.color, state.color)
+    if type(data.gradient) == "boolean" then
+        state.gradient = data.gradient
+    end
+    state.featureColor = unpackColor(data.feature, state.featureColor)
+    if type(data.headers) == "table" then
+        for i = 1, #CATEGORIES do
+            state.headers[i] = unpackColor(data.headers[i], state.headers[i])
+        end
+    end
+end
+
+loadConfig()
+draft = shallowCopy(state)
+draft.headers = shallowCopy(state.headers)
+
+local function instance(class, parent, props)
+    local obj = Instance.new(class)
+    for k, v in pairs(props) do
+        obj[k] = v
+    end
+    if parent then obj.Parent = parent end
+    return obj
+end
+
+local function round(obj, r)
+    return instance("UICorner", obj, { CornerRadius = r or UDim.new(0, 8) })
+end
+
+local function outline(obj, color, thickness, alpha)
+    return instance("UIStroke", obj, {
+        Color = color or C.accent,
+        Thickness = thickness or 1,
+        Transparency = alpha or 0.5,
+    })
+end
+
+local function fill(obj, stops, rotation)
+    return instance("UIGradient", obj, {
+        Color = ColorSequence.new(stops),
+        Rotation = rotation or 90,
+    })
+end
+
+local function fill2(obj, a, b, rotation)
+    return fill(obj, {
+        ColorSequenceKeypoint.new(0, a),
+        ColorSequenceKeypoint.new(1, b),
+    }, rotation)
+end
+
+local function isPress(input)
+    return input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function isMove(input)
+    return input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+end
+
+local logoGui = instance("ScreenGui", pg, {
+    Name = "AstraLogoGui",
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true,
+})
+
+local logoBtn = instance("ImageButton", logoGui, {
+    Name = "LogoButton",
+    Size = UDim2.fromOffset(48, 48),
+    Position = UDim2.fromOffset(20, 120),
+    BackgroundColor3 = C.panel,
+    BackgroundTransparency = 0.05,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Image = ASSETS.logo,
+    ScaleType = Enum.ScaleType.Fit,
+})
+round(logoBtn, UDim.new(0, 12))
+outline(logoBtn, C.accent, 1, 0.4)
+instance("UIPadding", logoBtn, {
+    PaddingLeft   = UDim.new(0, 8),
+    PaddingRight  = UDim.new(0, 8),
+    PaddingTop    = UDim.new(0, 8),
+    PaddingBottom = UDim.new(0, 8),
+})
+
+local gui = instance("ScreenGui", pg, {
+    Name = "CheatMenuGui",
+    ResetOnSpawn = false,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    IgnoreGuiInset = true,
+})
+
+local function toggleMenu()
+    gui.Enabled = not gui.Enabled
+end
+
+local main = instance("Frame", gui, {
+    Name = "Main",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.new(0.5, 0, 0.5, 0),
+    Size = UDim2.new(0.30, 0, 0.28, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+})
+instance("UISizeConstraint", main, {
+    MinSize = Vector2.new(260, 150),
+    MaxSize = Vector2.new(600, 300),
+})
+
+local holder = instance("Frame", main, {
+    Name = "Holder",
+    Position = UDim2.new(0, 0, 0, 56),
+    Size = UDim2.new(1, 0, 1, -100),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+})
+instance("UIListLayout", holder, {
+    FillDirection = Enum.FillDirection.Horizontal,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 6),
+})
+
+local header = instance("Frame", main, {
+    Name = "Header",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, 10),
+    Size = UDim2.new(0, 0, 0, 36),
+    AutomaticSize = Enum.AutomaticSize.X,
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+})
+instance("UIListLayout", header, {
+    FillDirection = Enum.FillDirection.Horizontal,
+    VerticalAlignment = Enum.VerticalAlignment.Center,
+    Padding = UDim.new(0, 10),
+})
+instance("ImageLabel", header, {
+    Name = "Logo",
+    Size = UDim2.new(0, 36, 0, 36),
+    BackgroundTransparency = 1,
+    Image = ASSETS.logo,
+    ScaleType = Enum.ScaleType.Fit,
+})
+instance("TextLabel", header, {
+    Name = "Title",
+    Size = UDim2.new(0, 0, 1, 0),
+    AutomaticSize = Enum.AutomaticSize.X,
+    BackgroundTransparency = 1,
+    Text = "Project Astra",
+    TextColor3 = C.title,
+    TextSize = 18,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local searchBar = instance("Frame", main, {
+    Name = "Search",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 1, -34),
+    Size = UDim2.new(0.22, 0, 0, 30),
+    BackgroundColor3 = C.panel,
+    BackgroundTransparency = 0.05,
+    BorderSizePixel = 0,
+})
+round(searchBar, UDim.new(1, 0))
+outline(searchBar, C.accent, 1, 0.6)
+
+instance("ImageLabel", searchBar, {
+    Name = "Icon",
+    Size = UDim2.new(0, 14, 0, 14),
+    Position = UDim2.new(0, 10, 0.5, -7),
+    BackgroundTransparency = 1,
+    Image = ASSETS.search,
+    ImageColor3 = C.textOff,
+    ScaleType = Enum.ScaleType.Fit,
+})
+
+local searchBox = instance("TextBox", searchBar, {
+    Size = UDim2.new(1, -40, 1, 0),
+    Position = UDim2.new(0, 30, 0, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    PlaceholderText = "Search",
+    PlaceholderColor3 = Color3.fromRGB(95, 90, 120),
+    Text = "",
+    TextColor3 = C.text,
+    TextSize = 11,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    ClearTextOnFocus = false,
+})
+
+local gearBtn = instance("TextButton", main, {
+    Name = "Gear",
+    Position = UDim2.new(0.61, 6, 1, -34),
+    Size = UDim2.new(0, 30, 0, 30),
+    BackgroundColor3 = C.panel,
+    BackgroundTransparency = 0.05,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "",
+})
+round(gearBtn, UDim.new(1, 0))
+outline(gearBtn, C.accent, 1, 0.6)
+instance("ImageLabel", gearBtn, {
+    Name = "Icon",
+    Size = UDim2.new(0, 18, 0, 18),
+    Position = UDim2.new(0.5, -9, 0.5, -9),
+    BackgroundTransparency = 1,
+    Image = ASSETS.gear,
+    ImageColor3 = C.textOff,
+    ScaleType = Enum.ScaleType.Fit,
+})
+
+local settings = instance("Frame", main, {
+    Name = "Settings",
+    Size = UDim2.new(0, 250, 0, 312),
+    Position = UDim2.new(0.5, -125, 1, -352),
+    BackgroundColor3 = C.panel,
+    BackgroundTransparency = 0.02,
+    BorderSizePixel = 0,
+    Visible = false,
+})
+round(settings, UDim.new(0, 12))
+outline(settings, C.accent, 1, 0.45)
+
+instance("TextLabel", settings, {
+    Position = UDim2.new(0, 14, 0, 8),
+    Size = UDim2.new(0, 200, 0, 22),
+    BackgroundTransparency = 1,
+    Text = "Settings",
+    TextColor3 = C.title,
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local closeBtn = instance("TextButton", settings, {
+    Position = UDim2.new(1, -32, 0, 8),
+    Size = UDim2.new(0, 22, 0, 22),
+    BackgroundColor3 = C.field,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "",
+})
+round(closeBtn, UDim.new(0, 6))
+instance("ImageLabel", closeBtn, {
+    Name = "Icon",
+    Size = UDim2.new(0, 12, 0, 12),
+    Position = UDim2.new(0.5, -6, 0.5, -6),
+    BackgroundTransparency = 1,
+    Image = ASSETS.close,
+    ImageColor3 = C.textOff,
+    ScaleType = Enum.ScaleType.Fit,
+})
+
+instance("Frame", settings, {
+    Position = UDim2.new(0, 12, 0, 36),
+    Size = UDim2.new(1, -24, 0, 1),
+    BackgroundColor3 = C.accent,
+    BackgroundTransparency = 0.6,
+    BorderSizePixel = 0,
+})
+
+local function label(text, y)
+    return instance("TextLabel", settings, {
+        Position = UDim2.new(0, 14, 0, y),
+        Size = UDim2.new(0, 130, 0, 24),
+        BackgroundTransparency = 1,
+        Text = text,
+        TextColor3 = C.textOff,
+        TextSize = 12,
+        Font = Enum.Font.Gotham,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    })
+end
+
+local function buildToggle(pos)
+    local bg = instance("Frame", settings, {
+        Position = pos,
+        Size = UDim2.new(0, 44, 0, 22),
+        BackgroundColor3 = C.field,
+        BorderSizePixel = 0,
+    })
+    round(bg, UDim.new(1, 0))
+    local grad = fill2(bg, C.accent, C.accent2, 0)
+    local knob = instance("Frame", bg, {
+        Size = UDim2.new(0, 16, 0, 16),
+        Position = UDim2.new(0, 3, 0.5, -8),
+        BackgroundColor3 = C.white,
+        BorderSizePixel = 0,
+    })
+    round(knob, UDim.new(1, 0))
+    local btn = instance("TextButton", bg, {
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        AutoButtonColor = false,
+    })
+    return { bg = bg, grad = grad, knob = knob, btn = btn }
+end
+
+local function paintToggle(t, on, animate)
+    t.grad.Enabled = on
+    t.bg.BackgroundColor3 = on and C.white or C.field
+    local target
+    if on then
+        target = UDim2.new(1, -19, 0.5, -8)
+    else
+        target = UDim2.new(0, 3, 0.5, -8)
+    end
+    if animate then
+        Tween:Create(t.knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { Position = target }):Play()
+    else
+        t.knob.Position = target
+    end
+end
+
+label("Transparency", 48)
+local transBox = instance("TextBox", settings, {
+    Position = UDim2.new(0, 160, 0, 48),
+    Size = UDim2.new(0, 52, 0, 24),
+    BackgroundColor3 = C.field,
+    BorderSizePixel = 0,
+    Text = "0",
+    TextColor3 = C.text,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+    ClearTextOnFocus = false,
+})
+round(transBox, UDim.new(0, 6))
+instance("TextLabel", settings, {
+    Position = UDim2.new(0, 216, 0, 48),
+    Size = UDim2.new(0, 16, 0, 24),
+    BackgroundTransparency = 1,
+    Text = "%",
+    TextColor3 = C.textOff,
+    TextSize = 12,
+    Font = Enum.Font.Gotham,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+label("Color", 84)
+local swatch = instance("TextButton", settings, {
+    Position = UDim2.new(0, 160, 0, 84),
+    Size = UDim2.new(0, 76, 0, 24),
+    BackgroundColor3 = draft.color,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "",
+})
+round(swatch, UDim.new(0, 6))
+outline(swatch, C.textOff, 1, 0.5)
+
+label("Gradient", 120)
+local gradToggle = buildToggle(UDim2.new(0, 160, 0, 120))
+
+label("Auto-save", 156)
+local autoToggle = buildToggle(UDim2.new(0, 160, 0, 156))
+
+local catIndex = 0
+local catPrev = instance("TextButton", settings, {
+    Position = UDim2.new(0, 14, 0, 192),
+    Size = UDim2.new(0, 22, 0, 22),
+    BackgroundColor3 = C.field,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "<",
+    TextColor3 = C.text,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+})
+round(catPrev, UDim.new(0, 6))
+
+local catLabel = instance("TextLabel", settings, {
+    Position = UDim2.new(0, 40, 0, 192),
+    Size = UDim2.new(0, 100, 0, 22),
+    BackgroundTransparency = 1,
+    Text = CATEGORIES[1].title,
+    TextColor3 = C.text,
+    TextSize = 11,
+    Font = Enum.Font.GothamBold,
+})
+
+local catNext = instance("TextButton", settings, {
+    Position = UDim2.new(0, 144, 0, 192),
+    Size = UDim2.new(0, 22, 0, 22),
+    BackgroundColor3 = C.field,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = ">",
+    TextColor3 = C.text,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+})
+round(catNext, UDim.new(0, 6))
+
+local headerSwatch = instance("TextButton", settings, {
+    Position = UDim2.new(0, 174, 0, 192),
+    Size = UDim2.new(0, 62, 0, 22),
+    BackgroundColor3 = draft.headers[1],
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "",
+})
+round(headerSwatch, UDim.new(0, 6))
+outline(headerSwatch, C.textOff, 1, 0.5)
+
+label("Feature", 228)
+local featureSwatch = instance("TextButton", settings, {
+    Position = UDim2.new(0, 160, 0, 228),
+    Size = UDim2.new(0, 76, 0, 24),
+    BackgroundColor3 = draft.featureColor,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "",
+})
+round(featureSwatch, UDim.new(0, 6))
+outline(featureSwatch, C.textOff, 1, 0.5)
+
+local applyBtn = instance("TextButton", settings, {
+    Position = UDim2.new(0, 92, 0, 268),
+    Size = UDim2.new(0, 144, 0, 32),
+    BackgroundColor3 = C.white,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "Apply",
+    TextColor3 = C.text,
+    TextStrokeTransparency = 0.5,
+    TextSize = 13,
+    Font = Enum.Font.GothamBold,
+    ZIndex = 2,
+})
+round(applyBtn, UDim.new(0, 8))
+fill2(applyBtn, C.accent, C.accent2, 90)
+
+local resetBtn = instance("TextButton", settings, {
+    Position = UDim2.new(0, 14, 0, 268),
+    Size = UDim2.new(0, 70, 0, 32),
+    BackgroundColor3 = C.field,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "Reset",
+    TextColor3 = C.textOff,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+    ZIndex = 2,
+})
+round(resetBtn, UDim.new(0, 8))
+
+local palette = instance("Frame", main, {
+    Name = "Palette",
+    Size = UDim2.new(0, 200, 0, 236),
+    Position = UDim2.new(0.5, -100, 0.5, -118),
+    BackgroundColor3 = C.panel,
+    BackgroundTransparency = 0.02,
+    BorderSizePixel = 0,
+    Visible = false,
+})
+round(palette, UDim.new(0, 12))
+outline(palette, C.accent, 1, 0.4)
+
+local svArea = instance("Frame", palette, {
+    Position = UDim2.new(0, 10, 0, 10),
+    Size = UDim2.new(0, 180, 0, 120),
+    BackgroundColor3 = Color3.fromRGB(255, 0, 0),
+    BorderSizePixel = 0,
+})
+round(svArea, UDim.new(0, 6))
+
+local svWhite = instance("Frame", svArea, {
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundColor3 = C.white,
+    BorderSizePixel = 0,
+})
+round(svWhite, UDim.new(0, 6))
+instance("UIGradient", svWhite, {
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(1, 1),
+    }),
+    Rotation = 0,
+})
+
+local svBlack = instance("Frame", svArea, {
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundColor3 = C.black,
+    BorderSizePixel = 0,
+})
+round(svBlack, UDim.new(0, 6))
+instance("UIGradient", svBlack, {
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(1, 0),
+    }),
+    Rotation = 90,
+})
+
+local svCursor = instance("Frame", svArea, {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Size = UDim2.new(0, 8, 0, 8),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+})
+round(svCursor, UDim.new(1, 0))
+outline(svCursor, C.white, 2, 0)
+
+local hueBar = instance("Frame", palette, {
+    Position = UDim2.new(0, 10, 0, 140),
+    Size = UDim2.new(0, 180, 0, 12),
+    BackgroundColor3 = C.white,
+    BorderSizePixel = 0,
+})
+round(hueBar, UDim.new(0, 6))
+fill(hueBar, {
+    ColorSequenceKeypoint.new(0,     Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(1 / 6, Color3.fromRGB(255, 255, 0)),
+    ColorSequenceKeypoint.new(2 / 6, Color3.fromRGB(0, 255, 0)),
+    ColorSequenceKeypoint.new(3 / 6, Color3.fromRGB(0, 255, 255)),
+    ColorSequenceKeypoint.new(4 / 6, Color3.fromRGB(0, 0, 255)),
+    ColorSequenceKeypoint.new(5 / 6, Color3.fromRGB(255, 0, 255)),
+    ColorSequenceKeypoint.new(1,     Color3.fromRGB(255, 0, 0)),
+}, 0)
+
+local hueCursor = instance("Frame", hueBar, {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Size = UDim2.new(0, 4, 0, 16),
+    Position = UDim2.new(0, 0, 0.5, 0),
+    BackgroundColor3 = C.white,
+    BorderSizePixel = 0,
+})
+round(hueCursor, UDim.new(0, 2))
+outline(hueCursor, C.black, 1, 0.3)
+
+local preview = instance("Frame", palette, {
+    Position = UDim2.new(0, 10, 0, 164),
+    Size = UDim2.new(0, 40, 0, 24),
+    BackgroundColor3 = draft.color,
+    BorderSizePixel = 0,
+})
+round(preview, UDim.new(0, 6))
+outline(preview, C.white, 1, 0.7)
+
+local hexLabel = instance("TextLabel", palette, {
+    Position = UDim2.new(0, 58, 0, 164),
+    Size = UDim2.new(0, 132, 0, 24),
+    BackgroundTransparency = 1,
+    Text = "",
+    TextColor3 = C.text,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local palClose = instance("TextButton", palette, {
+    Position = UDim2.new(0, 10, 1, -38),
+    Size = UDim2.new(0, 84, 0, 28),
+    BackgroundColor3 = C.field,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "Close",
+    TextColor3 = C.textOff,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+})
+round(palClose, UDim.new(0, 8))
+
+local palApply = instance("TextButton", palette, {
+    Position = UDim2.new(0, 106, 1, -38),
+    Size = UDim2.new(0, 84, 0, 28),
+    BackgroundColor3 = C.white,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "Apply",
+    TextColor3 = C.text,
+    TextStrokeTransparency = 0.5,
+    TextSize = 12,
+    Font = Enum.Font.GothamBold,
+    ZIndex = 2,
+})
+round(palApply, UDim.new(0, 8))
+fill2(palApply, C.accent, C.accent2, 90)
+
+local hue, sat, val = 0, 1, 1
+local palColor = draft.color
+local palTarget = "main"
+local activeDrag = nil
+
+local function toHex(c)
+    return string.format("#%02X%02X%02X",
+        math.floor(c.R * 255 + 0.5),
+        math.floor(c.G * 255 + 0.5),
+        math.floor(c.B * 255 + 0.5))
+end
+
+local function refreshPalette()
+    palColor = Color3.fromHSV(hue, sat, val)
+    svArea.BackgroundColor3 = Color3.fromHSV(hue, 1, 1)
+    svCursor.Position = UDim2.new(sat, 0, 1 - val, 0)
+    hueCursor.Position = UDim2.new(hue, 0, 0.5, 0)
+    preview.BackgroundColor3 = palColor
+    hexLabel.Text = toHex(palColor)
+end
+
+local function setPalette(c)
+    hue, sat, val = c:ToHSV()
+    refreshPalette()
+end
+
+local function openPalette(target, color)
+    palTarget = target
+    setPalette(color)
+    palette.Visible = true
+end
+
+local function normFromMouse(obj)
+    local mp = UserInput:GetMouseLocation()
+    local ap, as = obj.AbsolutePosition, obj.AbsoluteSize
+    return math.clamp((mp.X - ap.X) / as.X, 0, 1),
+           math.clamp((mp.Y - ap.Y) / as.Y, 0, 1)
+end
+
+local function applyDrag()
+    if activeDrag == "sv" then
+        local x, y = normFromMouse(svArea)
+        sat, val = x, 1 - y
+    elseif activeDrag == "hue" then
+        hue = normFromMouse(hueBar)
+    end
+    refreshPalette()
+end
+
+local colFrames = {}
+local headerRefs = {}
+local rowRefs = {}
+local allRows = {}
+
+local function applyHeaders()
+    for i, ref in ipairs(headerRefs) do
+        local base = state.headers[i]
+        local dark = base:Lerp(C.black, 0.6)
+        ref.grad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, base),
+            ColorSequenceKeypoint.new(1, dark),
+        })
+        ref.patch.BackgroundColor3 = dark
+    end
+end
+
+local function applyFeatureColor()
+    local base = state.featureColor
+    local dark = base:Lerp(C.black, 0.4)
+    for _, ref in ipairs(rowRefs) do
+        ref.grad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, base),
+            ColorSequenceKeypoint.new(1, dark),
+        })
+    end
+end
+
+local function applyStyle()
+    local c0 = state.color:Lerp(C.accent, 0.18)
+    local c1 = state.color:Lerp(C.black, 0.4)
+    for _, ref in ipairs(colFrames) do
+        ref.frame.BackgroundTransparency = state.transparency
+        ref.frame.BackgroundColor3 = state.gradient and C.white or state.color
+        ref.grad.Enabled = state.gradient
+        ref.grad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, c0),
+            ColorSequenceKeypoint.new(0.5, state.color),
+            ColorSequenceKeypoint.new(1, c1),
+        })
+    end
+    applyHeaders()
+    applyFeatureColor()
+end
+
+local function currentCategoryName()
+    if catIndex == 0 then return "All" end
+    return CATEGORIES[catIndex].title
+end
+
+local function currentHeaderColor()
+    if catIndex == 0 then return draft.headers[1] end
+    return draft.headers[catIndex]
+end
+
+local function refreshSettings()
+    transBox.Text = tostring(math.floor(draft.transparency * 100 + 0.5))
+    swatch.BackgroundColor3 = draft.color
+    paintToggle(gradToggle, draft.gradient, false)
+    paintToggle(autoToggle, draft.autosave, false)
+    catLabel.Text = currentCategoryName()
+    headerSwatch.BackgroundColor3 = currentHeaderColor()
+    featureSwatch.BackgroundColor3 = draft.featureColor
+end
+
+local function closeSettings()
+    settings.Visible = false
+    palette.Visible = false
+    activeDrag = nil
+end
+
+local function buildRowToggle(parent)
+    local bg = instance("Frame", parent, {
+        Size = UDim2.new(0, 30, 0, 16),
+        Position = UDim2.new(1, -36, 0.5, -8),
+        BackgroundColor3 = C.field,
+        BorderSizePixel = 0,
+    })
+    round(bg, UDim.new(1, 0))
+    local grad = fill2(bg, C.accent, C.accent2, 0)
+    grad.Enabled = false
+    local knob = instance("Frame", bg, {
+        Size = UDim2.new(0, 12, 0, 12),
+        Position = UDim2.new(0, 2, 0.5, -6),
+        BackgroundColor3 = C.white,
+        BorderSizePixel = 0,
+    })
+    round(knob, UDim.new(1, 0))
+    return { bg = bg, grad = grad, knob = knob }
+end
+
+local function paintRowToggle(t, on, animate)
+    t.grad.Enabled = on
+    t.bg.BackgroundColor3 = on and C.white or C.field
+    local target
+    if on then
+        target = UDim2.new(1, -14, 0.5, -6)
+    else
+        target = UDim2.new(0, 2, 0.5, -6)
+    end
+    if animate then
+        Tween:Create(t.knob, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { Position = target }):Play()
+    else
+        t.knob.Position = target
+    end
+end
+
+local function pulseRow(row, nameLbl)
+    Tween:Create(row, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {
+        BackgroundTransparency = 0.35,
+    }):Play()
+    nameLbl.TextColor3 = C.text
+    task.delay(0.5, function()
+        Tween:Create(row, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+            BackgroundTransparency = 1,
+        }):Play()
+        nameLbl.TextColor3 = C.textOff
+    end)
+end
+
+local function runHandler(name, on)
+    local handler = HANDLERS[name]
+    if not handler then return end
+    if on then
+        if handler.start then handler.start() end
+    else
+        if handler.stop then handler.stop() end
+    end
+end
+
+local function buildColumn(data)
+    local col = instance("Frame", holder, {
+        Name = "Col_" .. data.title,
+        Size = UDim2.new(0.23, 0, 1, 0),
+        BackgroundColor3 = state.color,
+        BackgroundTransparency = state.transparency,
+        BorderSizePixel = 0,
+    })
+    round(col, UDim.new(0, 10))
+    local colGrad = fill2(col, C.accent, C.black, 160)
+    table.insert(colFrames, { frame = col, grad = colGrad })
+
+    local colHeader = instance("Frame", col, {
+        Size = UDim2.new(1, 0, 0, 38),
+        BackgroundColor3 = C.white,
+        BackgroundTransparency = 0.1,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+    })
+    round(colHeader, UDim.new(0, 10))
+    local patch = instance("Frame", colHeader, {
+        Size = UDim2.new(1, 0, 0, 10),
+        Position = UDim2.new(0, 0, 1, -10),
+        BackgroundColor3 = C.header,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+    })
+    local headerGrad = fill2(colHeader, C.header, C.header:Lerp(C.black, 0.6), 180)
+    table.insert(headerRefs, { header = colHeader, patch = patch, grad = headerGrad })
+
+    instance("TextLabel", colHeader, {
+        Size = UDim2.new(1, -12, 1, 0),
+        Position = UDim2.new(0, 10, 0, 0),
+        BackgroundTransparency = 1,
+        Text = data.title,
+        TextColor3 = C.title,
+        TextSize = 13,
+        Font = Enum.Font.GothamBold,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 3,
+    })
+
+    local scroll = instance("ScrollingFrame", col, {
+        Size = UDim2.new(1, 0, 1, -42),
+        Position = UDim2.new(0, 0, 0, 42),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = Color3.fromRGB(90, 80, 180),
+        CanvasSize = UDim2.new(0, 0, 0, #data.items * 32 + 8),
+    })
+    instance("UIListLayout", scroll, { Padding = UDim.new(0, 2) })
+    instance("UIPadding", scroll, {
+        PaddingLeft  = UDim.new(0, 5),
+        PaddingRight = UDim.new(0, 5),
+        PaddingTop   = UDim.new(0, 4),
+    })
+
+    for _, item in ipairs(data.items) do
+        local on = false
+        local pulse = item.pulse == true
+
+        local row = instance("Frame", scroll, {
+            Name = item.name,
+            Size = UDim2.new(1, 0, 0, 28),
+            BackgroundColor3 = C.white,
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+        })
+        round(row, UDim.new(0, 6))
+        local rowGrad = fill2(row, C.accent, C.accent:Lerp(C.black, 0.4), 180)
+        table.insert(rowRefs, { frame = row, grad = rowGrad })
+
+        local nameSize
+        if pulse then
+            nameSize = UDim2.new(1, -12, 1, 0)
+        else
+            nameSize = UDim2.new(1, -44, 1, 0)
+        end
+
+        local nameLbl = instance("TextLabel", row, {
+            Size = nameSize,
+            Position = UDim2.new(0, 6, 0, 0),
+            BackgroundTransparency = 1,
+            Text = item.name,
+            TextColor3 = C.textOff,
+            TextSize = 11,
+            Font = Enum.Font.Gotham,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        })
+
+        local rowToggle
+        if not pulse then
+            rowToggle = buildRowToggle(row)
+            paintRowToggle(rowToggle, on, false)
+        end
+
+        local hit = instance("TextButton", row, {
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = "",
+        })
+
+        local function activate()
+            if pulse then
+                pulseRow(row, nameLbl)
+                runHandler(item.name, true)
+                return
+            end
+            on = not on
+            Tween:Create(row, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
+                BackgroundTransparency = on and 0.65 or 1,
+            }):Play()
+            nameLbl.TextColor3 = on and C.text or C.textOff
+            paintRowToggle(rowToggle, on, true)
+            runHandler(item.name, on)
+        end
+
+        hit.MouseButton1Click:Connect(activate)
+        hit.TouchTap:Connect(activate)
+
+        table.insert(allRows, { frame = row, name = item.name:lower() })
+    end
+end
+
+for _, data in ipairs(CATEGORIES) do
+    buildColumn(data)
+end
+
+applyStyle()
+refreshSettings()
+
+do
+    local dragging, moved = false, false
+    local startMouse, startPos
+
+    local function beginDrag(input)
+        if isPress(input) then
+            dragging, moved = true, false
+            startMouse = UserInput:GetMouseLocation()
+            startPos = logoBtn.AbsolutePosition
+        end
+    end
+
+    local function endDrag(input)
+        if isPress(input) and dragging then
+            dragging = false
+            if not moved then
+                toggleMenu()
+            end
+        end
+    end
+
+    logoBtn.InputBegan:Connect(beginDrag)
+    logoBtn.InputEnded:Connect(endDrag)
+
+    UserInput.InputChanged:Connect(function(input)
+        if dragging and isMove(input) then
+            local delta = UserInput:GetMouseLocation() - startMouse
+            if delta.Magnitude > 4 then moved = true end
+            if moved then
+                logoBtn.Position = UDim2.fromOffset(
+                    startPos.X + delta.X,
+                    startPos.Y + delta.Y
+                )
+            end
+        end
+    end)
+end
+
+searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    local q = searchBox.Text:lower()
+    for _, entry in ipairs(allRows) do
+        if q == "" or entry.name:find(q, 1, true) ~= nil then
+            entry.frame.Visible = true
+        else
+            entry.frame.Visible = false
+        end
+    end
+end)
+
+local function toggleSettings()
+    if settings.Visible then
+        closeSettings()
+    else
+        draft = shallowCopy(state)
+        draft.headers = shallowCopy(state.headers)
+        refreshSettings()
+        settings.Visible = true
+    end
+end
+
+gearBtn.MouseButton1Click:Connect(toggleSettings)
+gearBtn.TouchTap:Connect(toggleSettings)
+
+local function discardAndClose()
+    draft = shallowCopy(state)
+    draft.headers = shallowCopy(state.headers)
+    refreshSettings()
+    closeSettings()
+end
+
+closeBtn.MouseButton1Click:Connect(discardAndClose)
+closeBtn.TouchTap:Connect(discardAndClose)
+
+transBox.FocusLost:Connect(function()
+    local digits = transBox.Text:match("%d+")
+    local n = digits and tonumber(digits)
+    if n then
+        draft.transparency = math.clamp(n, 0, 90) / 100
+    end
+    refreshSettings()
+end)
+
+local function toggleGradient()
+    draft.gradient = not draft.gradient
+    paintToggle(gradToggle, draft.gradient, true)
+end
+
+gradToggle.btn.MouseButton1Click:Connect(toggleGradient)
+gradToggle.btn.TouchTap:Connect(toggleGradient)
+
+local function toggleAutosave()
+    draft.autosave = not draft.autosave
+    paintToggle(autoToggle, draft.autosave, true)
+end
+
+autoToggle.btn.MouseButton1Click:Connect(toggleAutosave)
+autoToggle.btn.TouchTap:Connect(toggleAutosave)
+
+local function prevCategory()
+    catIndex = catIndex - 1
+    if catIndex < 0 then catIndex = #CATEGORIES end
+    refreshSettings()
+end
+
+local function nextCategory()
+    catIndex = catIndex + 1
+    if catIndex > #CATEGORIES then catIndex = 0 end
+    refreshSettings()
+end
+
+catPrev.MouseButton1Click:Connect(prevCategory)
+catPrev.TouchTap:Connect(prevCategory)
+
+catNext.MouseButton1Click:Connect(nextCategory)
+catNext.TouchTap:Connect(nextCategory)
+
+local function openMainPalette()    openPalette("main", draft.color) end
+local function openFeaturePalette() openPalette("feature", draft.featureColor) end
+local function openHeaderPalette()  openPalette("header", currentHeaderColor()) end
+
+swatch.MouseButton1Click:Connect(openMainPalette)
+swatch.TouchTap:Connect(openMainPalette)
+
+featureSwatch.MouseButton1Click:Connect(openFeaturePalette)
+featureSwatch.TouchTap:Connect(openFeaturePalette)
+
+headerSwatch.MouseButton1Click:Connect(openHeaderPalette)
+headerSwatch.TouchTap:Connect(openHeaderPalette)
+
+local function closePalette()
+    palette.Visible = false
+    activeDrag = nil
+end
+
+palClose.MouseButton1Click:Connect(closePalette)
+palClose.TouchTap:Connect(closePalette)
+
+local function applyPalette()
+    if palTarget == "header" then
+        if catIndex == 0 then
+            for i = 1, #CATEGORIES do
+                draft.headers[i] = palColor
+            end
+        else
+            draft.headers[catIndex] = palColor
+        end
+    elseif palTarget == "feature" then
+        draft.featureColor = palColor
+    else
+        draft.color = palColor
+    end
+    refreshSettings()
+    palette.Visible = false
+    activeDrag = nil
+end
+
+palApply.MouseButton1Click:Connect(applyPalette)
+palApply.TouchTap:Connect(applyPalette)
+
+local function beginSv(input)
+    if isPress(input) then
+        activeDrag = "sv"
+        applyDrag()
+    end
+end
+
+local function beginHue(input)
+    if isPress(input) then
+        activeDrag = "hue"
+        applyDrag()
+    end
+end
+
+svArea.InputBegan:Connect(beginSv)
+hueBar.InputBegan:Connect(beginHue)
+
+UserInput.InputChanged:Connect(function(input)
+    if activeDrag and isMove(input) then
+        applyDrag()
+    end
+end)
+
+UserInput.InputEnded:Connect(function(input)
+    if isPress(input) then
+        activeDrag = nil
+    end
+end)
+
+local function doApply()
+    state = shallowCopy(draft)
+    state.headers = shallowCopy(draft.headers)
+    applyStyle()
+    if state.autosave then
+        saveConfig()
+    end
+    closeSettings()
+end
+
+applyBtn.MouseButton1Click:Connect(doApply)
+applyBtn.TouchTap:Connect(doApply)
+
+local function defaults()
+    return {
+        transparency = 0,
+        color        = Color3.fromRGB(0, 0, 0),
+        gradient     = true,
+        autosave     = false,
+        headers      = blankHeaders(),
+        featureColor = C.accent,
+    }
+end
+
+local resetArmed = false
+local resetToken = 0
+
+local function disarmReset()
+    resetArmed = false
+    resetBtn.Text = "Reset"
+    resetBtn.TextColor3 = C.textOff
+    resetBtn.BackgroundColor3 = C.field
+end
+
+local function onReset()
+    if not resetArmed then
+        resetArmed = true
+        resetToken = resetToken + 1
+        local myToken = resetToken
+        resetBtn.Text = "Sure?"
+        resetBtn.TextColor3 = C.text
+        resetBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 60)
+        task.delay(3, function()
+            if resetArmed and resetToken == myToken then
+                disarmReset()
+            end
+        end)
+        return
+    end
+
+    disarmReset()
+    state = defaults()
+    draft = shallowCopy(state)
+    draft.headers = shallowCopy(state.headers)
+    palette.Visible = false
+    activeDrag = nil
+    applyStyle()
+    refreshSettings()
+    saveConfig()
+end
+
+resetBtn.MouseButton1Click:Connect(onReset)
+resetBtn.TouchTap:Connect(onReset)
+
+UserInput.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        toggleMenu()
+    end
+end)
